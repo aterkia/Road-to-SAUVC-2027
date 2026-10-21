@@ -1,0 +1,50 @@
+/**:
+  ros__parameters:
+    use_sim_time: false
+helm:
+  ros__parameters:
+    command_timeout: 0.4
+    max_speed: 0.5
+    max_yaw_rate: 0.8
+    mock_connected: true
+    mock_telemetry: true
+wayfinder:
+  ros__parameters:
+    sensor_timeout: 0.5
+    max_task_timeout: 120.0
+    image_width: 640.0
+    image_height: 480.0
+    camera_frame: camera_optical_frame
+    min_confidence: 0.7
+    align_tolerance: 0.08
+    near_width_ratio: 0.55
+    pass_distance: 1.2
+    surge_speed: 0.4
+    yaw_rate: 0.6
+    turn_tolerance: 0.05
+spectra:
+  ros__parameters:
+    image_width: 640
+    image_height: 480
+    enable_finals: false
+    hsv_lower: [0, 120, 80]
+    hsv_upper: [25, 255, 255]
+    min_post_area: 80.0
+    min_post_aspect: 2.0
+    image_timeout: 0.5
+    camera_frame: camera_optical_frame
+    drum_hsv_lower: [90, 120, 80]
+    drum_hsv_upper: [130, 255, 255]
+    finals_min_area: 200.0
+    red_hsv_lower: [0, 150, 80]
+    red_hsv_upper: [8, 255, 255]
+    green_hsv_lower: [40, 120, 80]
+    green_hsv_upper: [85, 255, 255]
+    yellow_hsv_lower: [26, 120, 80]
+    yellow_hsv_upper: [38, 255, 255]
+orchestrator:
+  ros__parameters:
+    tasks: [PASS_GATE, TURN, PASS_GATE]
+    task_timeout: 20.0
+    health_timeout: 0.5
+    turn_angle: 3.141592653589793

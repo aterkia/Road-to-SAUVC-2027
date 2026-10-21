@@ -1,0 +1,10 @@
+# One active goal owns guidance. All angles are radians, timeout is seconds.
+string task
+float64 turn_radians
+float64 timeout
+---
+string status
+string reason
+---
+string phase
+float64 progress

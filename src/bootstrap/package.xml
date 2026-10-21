@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>bootstrap</name><version>0.1.0</version>
+  <description>Aterkia bootstrap, see PRD.md for ownership.</description>
+  <maintainer email="feby@computer.org">lainx86</maintainer>
+  <license>LicenseRef-Unspecified</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>ament_index_python</depend>
+  <depend>orchestrator</depend>
+  <depend>wayfinder</depend>
+  <depend>helm</depend>
+  <depend>spectra</depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>rcl_interfaces</test_depend>
+  <test_depend>action_msgs</test_depend>
+  <test_depend>aterkia_interfaces</test_depend>
+  <test_depend>cv_bridge</test_depend>
+  <test_depend>python3-numpy</test_depend>
+  <test_depend>python3-opencv</test_depend>
+  <test_depend>python3-yaml</test_depend>
+  <test_depend>ros2bag</test_depend>
+  <test_depend>rosbag2_storage_mcap</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>
