@@ -1,4 +1,5 @@
 """Run against the installed workspace; verifies real processes and ROS discovery."""
+
 import signal
 import subprocess
 import time
@@ -12,7 +13,8 @@ class StartupTest(unittest.TestCase):
         rclpy.init()
         node = rclpy.create_node('startup_test')
         process = subprocess.Popen(
-            ['ros2', 'launch', 'bootstrap', 'auv.launch.py'], start_new_session=True)
+            ['ros2', 'launch', 'bootstrap', 'auv.launch.py'], start_new_session=True
+        )
         try:
             deadline = time.monotonic() + 20
             expected = {'helm', 'wayfinder', 'spectra', 'orchestrator'}

@@ -17,17 +17,25 @@ class GuidanceFaultTest(RosTest):
         self.start('wayfinder')
         self.output = self.observe('/cmd_vel', Twist)
         self.status = self.observe('/navigation/status', String)
-        self.odom_pub = self.node.create_publisher(Odometry, '/vehicle/odometry', qos_profile_sensor_data)
+        self.odom_pub = self.node.create_publisher(
+            Odometry, '/vehicle/odometry', qos_profile_sensor_data
+        )
         self.health_pub = self.node.create_publisher(DiagnosticArray, '/vehicle/health', 1)
-        self.camera_pub = self.node.create_publisher(Detection2DArray, '/perception/detections', qos_profile_sensor_data)
+        self.camera_pub = self.node.create_publisher(
+            Detection2DArray, '/perception/detections', qos_profile_sensor_data
+        )
         self.show_gate = True
         self.freeze_odom = False
         self.freeze_camera = False
         self.saved_stamp = None
         self.sent = 0
         self.timer = self.node.create_timer(0.05, self.sensors)
-        self.wait(lambda: self.output and self.odom_pub.get_subscription_count() and
-                  self.health_pub.get_subscription_count() and self.camera_pub.get_subscription_count())
+        self.wait(
+            lambda: self.output
+            and self.odom_pub.get_subscription_count()
+            and self.health_pub.get_subscription_count()
+            and self.camera_pub.get_subscription_count()
+        )
         baseline = self.sent
         self.wait(lambda: self.sent >= baseline + 3)
 

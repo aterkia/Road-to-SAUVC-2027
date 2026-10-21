@@ -33,7 +33,8 @@ class VehicleTest(RosTest):
         self.wait(lambda: self.output[-1].linear.x > 0)
 
     def test_startup_unarmed_limits_frames_watchdog_and_no_resume(self):
-        command = Twist(); command.linear.x = 4.0
+        command = Twist()
+        command.linear.x = 4.0
         self.pub.publish(command)
         self.wait(lambda: len(self.output) > 3)
         self.assertTrue(all(m.linear.x == 0 for m in self.output))
@@ -59,7 +60,8 @@ class VehicleTest(RosTest):
 
     def test_invalid_command_disarms(self):
         self.move()
-        msg = Twist(); msg.linear.x = math.nan
+        msg = Twist()
+        msg.linear.x = math.nan
         self.pub.publish(msg)
         self.wait(lambda: self.health[-1].status[0].message == 'DISARMED')
         self.wait(lambda: self.output[-1].linear.x == 0)

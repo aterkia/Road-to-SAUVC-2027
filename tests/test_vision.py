@@ -14,20 +14,22 @@ from ros_test import RosTest
 
 def gate_image(center=320, width=200):
     image = np.zeros((480, 640, 3), dtype=np.uint8)
-    for x in (center-width//2, center+width//2):
-        cv2.rectangle(image, (x-8, 100), (x+8, 380), (0, 128, 255), -1)
+    for x in (center - width // 2, center + width // 2):
+        cv2.rectangle(image, (x - 8, 100), (x + 8, 380), (0, 128, 255), -1)
     return image
 
 
 class VisionTest(RosTest):
     def test_finals_detection_labels_and_headers(self):
         self.start('spectra', ('enable_finals', 'true'))
-        detections = self.observe('/perception/detections', Detection2DArray, qos_profile_sensor_data)
+        detections = self.observe(
+            '/perception/detections', Detection2DArray, qos_profile_sensor_data
+        )
         camera = self.node.create_publisher(Image, '/camera/image_raw', qos_profile_sensor_data)
         image = np.zeros((480, 640, 3), dtype=np.uint8)
         cv2.circle(image, (120, 240), 50, (255, 0, 0), -1)
         for x, color in [(350, (0, 0, 255)), (450, (0, 255, 0)), (550, (0, 255, 255))]:
-            cv2.rectangle(image, (x, 100), (x+20, 380), color, -1)
+            cv2.rectangle(image, (x, 100), (x + 20, 380), color, -1)
         bridge = CvBridge()
 
         def publish():
@@ -48,7 +50,9 @@ class VisionTest(RosTest):
         self.start('helm')
         self.start('wayfinder')
         self.start('spectra')
-        detections = self.observe('/perception/detections', Detection2DArray, qos_profile_sensor_data)
+        detections = self.observe(
+            '/perception/detections', Detection2DArray, qos_profile_sensor_data
+        )
         status = self.observe('/navigation/status', String)
         output = self.observe('/vehicle/applied_cmd', Twist)
         health = self.observe('/vehicle/health', DiagnosticArray)
@@ -84,7 +88,9 @@ class VisionTest(RosTest):
 
     def test_stale_malformed_and_wrong_frame_images_not_published(self):
         self.start('spectra')
-        detections = self.observe('/perception/detections', Detection2DArray, qos_profile_sensor_data)
+        detections = self.observe(
+            '/perception/detections', Detection2DArray, qos_profile_sensor_data
+        )
         camera = self.node.create_publisher(Image, '/camera/image_raw', qos_profile_sensor_data)
         self.wait(lambda: camera.get_subscription_count())
         bridge = CvBridge()

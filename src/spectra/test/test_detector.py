@@ -34,20 +34,25 @@ class DetectorTest(unittest.TestCase):
 
 class FinalsDetectorTest(unittest.TestCase):
     def detect(self, image):
-        return detect_finals(image, [90, 120, 80], [130, 255, 255], [
-            ('flare_red', [0, 150, 80], [8, 255, 255]),
-            ('flare_green', [40, 120, 80], [85, 255, 255]),
-            ('flare_yellow', [26, 120, 80], [38, 255, 255]),
-        ])
+        return detect_finals(
+            image,
+            [90, 120, 80],
+            [130, 255, 255],
+            [
+                ('flare_red', [0, 150, 80], [8, 255, 255]),
+                ('flare_green', [40, 120, 80], [85, 255, 255]),
+                ('flare_yellow', [26, 120, 80], [38, 255, 255]),
+            ],
+        )
 
     def test_drum_and_colored_flares(self):
         image = np.zeros((480, 640, 3), dtype=np.uint8)
         cv2.circle(image, (120, 240), 50, (255, 0, 0), -1)
         for x, color in [(350, (0, 0, 255)), (450, (0, 255, 0)), (550, (0, 255, 255))]:
-            cv2.rectangle(image, (x, 100), (x+20, 380), color, -1)
+            cv2.rectangle(image, (x, 100), (x + 20, 380), color, -1)
         results = dict(self.detect(image))
         self.assertEqual(set(results), {'drum', 'flare_red', 'flare_green', 'flare_yellow'})
-        self.assertLess(abs(results['drum'][0]-120), 1)
+        self.assertLess(abs(results['drum'][0] - 120), 1)
         self.assertTrue(all(0.65 <= box[-1] <= 1 for box in results.values()))
 
     def test_wrong_shapes_and_blank_are_rejected(self):

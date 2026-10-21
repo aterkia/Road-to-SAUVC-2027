@@ -51,15 +51,19 @@ class RosTest(unittest.TestCase):
 
     def observe(self, topic, msg_type, qos=10):
         messages = []
-        self.subscriptions.append(self.node.create_subscription(msg_type, topic, messages.append, qos))
+        self.subscriptions.append(
+            self.node.create_subscription(msg_type, topic, messages.append, qos)
+        )
         return messages
 
     def wait_armed_delivery(self, health):
         # Separate DDS readers may see the first armed sample at different times.
         # Keep spinning sensor fixtures for several updates before requesting a goal.
         baseline = len(health)
-        self.wait(lambda: len(health) >= baseline + 3 and
-                  all(m.status[0].message == 'ARMED' for m in health[-3:]))
+        self.wait(
+            lambda: len(health) >= baseline + 3
+            and all(m.status[0].message == 'ARMED' for m in health[-3:])
+        )
 
     def call(self, service, srv_type, request):
         client = self.node.create_client(srv_type, service)
@@ -71,8 +75,11 @@ class RosTest(unittest.TestCase):
         return result
 
     def parameter(self, node, name, value):
-        response = self.call(f'/{node}/set_parameters', SetParameters,
-                             SetParameters.Request(parameters=[RosParameter(name, value=value).to_parameter_msg()]))
+        response = self.call(
+            f'/{node}/set_parameters',
+            SetParameters,
+            SetParameters.Request(parameters=[RosParameter(name, value=value).to_parameter_msg()]),
+        )
         self.assertTrue(response.results[0].successful, response.results[0].reason)
 
     def goal(self, task, timeout=15.0, turn_radians=3.141592653589793, feedback=None):

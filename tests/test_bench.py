@@ -24,7 +24,9 @@ class BenchTest(RosTest):
         launch_log = (directory / 'launch.log').open('w')
         self.addCleanup(peer_log.close)
         self.addCleanup(launch_log.close)
-        peer = subprocess.Popen(['ros2', 'run', 'helm', 'helm_mavlink_peer'], stdout=peer_log, stderr=peer_log)
+        peer = subprocess.Popen(
+            ['ros2', 'run', 'helm', 'helm_mavlink_peer'], stdout=peer_log, stderr=peer_log
+        )
         self.processes.append(peer)
         self.wait(lambda: (directory / 'peer.log').read_text().strip())
         port = int((directory / 'peer.log').read_text().splitlines()[0])
@@ -32,30 +34,60 @@ class BenchTest(RosTest):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reservation:
             reservation.bind(('127.0.0.1', 0))
             local_port = reservation.getsockname()[1]
-        self.processes.append(subprocess.Popen([
-            'ros2', 'launch', 'bootstrap', 'bench.launch.py',
-            f'fcu_url:=udp://127.0.0.1:{local_port}@127.0.0.1:{port}'], stdout=launch_log, stderr=launch_log))
+        self.processes.append(
+            subprocess.Popen(
+                [
+                    'ros2',
+                    'launch',
+                    'bootstrap',
+                    'bench.launch.py',
+                    f'fcu_url:=udp://127.0.0.1:{local_port}@127.0.0.1:{port}',
+                ],
+                stdout=launch_log,
+                stderr=launch_log,
+            )
+        )
         health = self.observe('/vehicle/health', DiagnosticArray)
         heading = self.observe('/vehicle/heading', Float64, qos_profile_sensor_data)
         pressure = self.observe('/vehicle/pressure', FluidPressure, qos_profile_sensor_data)
-        self.wait(lambda: heading and pressure and health and health[-1].status[0].message == 'READ_ONLY', timeout=15,
-                  message=f'MAVROS connection failed; inspect {directory}')
+        self.wait(
+            lambda: heading and pressure and health and health[-1].status[0].message == 'READ_ONLY',
+            timeout=15,
+            message=f'MAVROS connection failed; inspect {directory}',
+        )
         self.assertAlmostEqual(heading[-1].data, math.pi / 2, places=4)
         self.assertAlmostEqual(pressure[-1].fluid_pressure, 119613.3, delta=0.1)
         names = {name for name, _ in self.node.get_node_names_and_namespaces()}
         self.assertFalse({'orchestrator', 'wayfinder', 'spectra'} & names)
         # Check the actual loaded plugins, not just the YAML's intended allowlist.
         plugin_lines = (directory / 'launch.log').read_text().splitlines()
-        loaded = {line.split('Plugin ')[1].split()[0] for line in plugin_lines
-                  if 'Plugin ' in line and ' created' in line}
+        loaded = {
+            line.split('Plugin ')[1].split()[0]
+            for line in plugin_lines
+            if 'Plugin ' in line and ' created' in line
+        }
         self.assertEqual(loaded, {'sys_status', 'sys_time', 'imu'})
-        recorder, recording = start_recording(self, 'bench', ROOT / 'src/bootstrap/config/bench.yaml',
-            ['/mavros/state', '/mavros/imu/data', '/vehicle/state', '/vehicle/health', '/vehicle/pressure'])
+        recorder, recording = start_recording(
+            self,
+            'bench',
+            ROOT / 'src/bootstrap/config/bench.yaml',
+            [
+                '/mavros/state',
+                '/mavros/imu/data',
+                '/vehicle/state',
+                '/vehicle/health',
+                '/vehicle/pressure',
+            ],
+        )
         for request in (True, False):
-            self.assertFalse(self.call('/vehicle/arm', SetBool, SetBool.Request(data=request)).success)
+            self.assertFalse(
+                self.call('/vehicle/arm', SetBool, SetBool.Request(data=request)).success
+            )
         self.assertFalse(self.call('/vehicle/set_mode', Trigger, Trigger.Request()).success)
         command = self.node.create_publisher(Twist, '/cmd_vel', 1)
-        twist = Twist(); twist.linear.x = 0.3; twist.angular.z = 0.2
+        twist = Twist()
+        twist.linear.x = 0.3
+        twist.angular.z = 0.2
         timer = self.node.create_timer(0.05, lambda: command.publish(twist))
         mark = len(heading)
         self.wait(lambda: len(heading) >= mark + 10)
@@ -63,7 +95,16 @@ class BenchTest(RosTest):
         received = (directory / 'peer.log').read_text().splitlines()[1:]
         self.assertTrue(received)
         # Transport may request capabilities/time, but must not emit actuator/setpoint commands.
-        forbidden_ids = {11, 69, 70, 75, 82, 84, 86, 139}  # SET_MODE, manual/RC, COMMAND_INT, targets
+        forbidden_ids = {
+            11,
+            69,
+            70,
+            75,
+            82,
+            84,
+            86,
+            139,
+        }  # SET_MODE, manual/RC, COMMAND_INT, targets
         for line in received:
             fields = line.split()
             if not fields or fields[0] != 'RX':
@@ -87,17 +128,38 @@ class BenchTest(RosTest):
         self.assertTrue(bag['/vehicle/state'])
         self.assertTrue(bag['/vehicle/imu'])
         self.assertTrue(bag['/vehicle/pressure'])
-        self.assertTrue(any(m.status[0].message == 'DISCONNECTED' for m, _ in bag['/vehicle/health']))
+        self.assertTrue(
+            any(m.status[0].message == 'DISCONNECTED' for m, _ in bag['/vehicle/health'])
+        )
         self.assertIn('/mavros/rc/out', manifest['topics_without_messages'])
         print(f'Bench UDP evidence: {directory}')
 
     def start_monitor(self, depth=False):
-        self.processes.append(subprocess.Popen([
-            'ros2', 'run', 'helm', 'helm_mavros_monitor', '--ros-args',
-            '-p', 'state_timeout:=0.6', '-p', 'telemetry_timeout:=0.3',
-            '-p', f'pressure_is_depth_sensor:={str(depth).lower()}',
-            '-p', 'surface_pressure_pa:=100000.0', '-p', 'water_density_kg_m3:=1000.0',
-            '-p', 'firmware_version:=fixture', '-p', 'control_mode:=TEST_ONLY']))
+        self.processes.append(
+            subprocess.Popen(
+                [
+                    'ros2',
+                    'run',
+                    'helm',
+                    'helm_mavros_monitor',
+                    '--ros-args',
+                    '-p',
+                    'state_timeout:=0.6',
+                    '-p',
+                    'telemetry_timeout:=0.3',
+                    '-p',
+                    f'pressure_is_depth_sensor:={str(depth).lower()}',
+                    '-p',
+                    'surface_pressure_pa:=100000.0',
+                    '-p',
+                    'water_density_kg_m3:=1000.0',
+                    '-p',
+                    'firmware_version:=fixture',
+                    '-p',
+                    'control_mode:=TEST_ONLY',
+                ]
+            )
+        )
         self.health = self.observe('/vehicle/health', DiagnosticArray)
         self.heading = self.observe('/vehicle/heading', Float64, qos_profile_sensor_data)
         self.depth = self.observe('/vehicle/depth', Float64, qos_profile_sensor_data)
@@ -106,8 +168,16 @@ class BenchTest(RosTest):
         self.states = self.observe('/vehicle/state', State)
         self.state_pub = self.node.create_publisher(State, '/mavros/state', 10)
         self.imu_pub = self.node.create_publisher(Imu, '/mavros/imu/data', qos_profile_sensor_data)
-        self.pressure_pub = self.node.create_publisher(FluidPressure, '/mavros/imu/static_pressure', qos_profile_sensor_data)
-        self.connected, self.send_sensors, self.send_state, self.bad, self.freeze = True, True, True, False, False
+        self.pressure_pub = self.node.create_publisher(
+            FluidPressure, '/mavros/imu/static_pressure', qos_profile_sensor_data
+        )
+        self.connected, self.send_sensors, self.send_state, self.bad, self.freeze = (
+            True,
+            True,
+            True,
+            False,
+            False,
+        )
         self.saved_stamp = None
         self.sent = 0
         self.timer = self.node.create_timer(0.05, self.publish)
@@ -120,7 +190,9 @@ class BenchTest(RosTest):
         if self.freeze:
             stamp = self.saved_stamp
         if self.send_state:
-            state = State(connected=self.connected, armed=True, manual_input=True, mode='EXTERNAL_MODE')
+            state = State(
+                connected=self.connected, armed=True, manual_input=True, mode='EXTERNAL_MODE'
+            )
             state.header.stamp = stamp
             self.state_pub.publish(state)
         if self.send_sensors:
@@ -160,7 +232,9 @@ class BenchTest(RosTest):
         command = self.node.create_publisher(Twist, '/cmd_vel', 1)
         command.publish(Twist())
         # No clients/publishers to any command transport, and no fabricated odometry.
-        self.wait(lambda: any(name == 'helm' for name, _ in self.node.get_node_names_and_namespaces()))
+        self.wait(
+            lambda: any(name == 'helm' for name, _ in self.node.get_node_names_and_namespaces())
+        )
         pubs = dict(self.node.get_publisher_names_and_types_by_node('helm', '/'))
         clients = self.node.get_client_names_and_types_by_node('helm', '/')
         self.assertFalse(any(name.startswith('/mavros/') for name in pubs))
@@ -207,7 +281,11 @@ class BenchTest(RosTest):
             self.assertNotEqual(result.returncode, 0)
 
     def test_launch_requires_explicit_endpoint(self):
-        result = subprocess.run(['ros2', 'launch', 'bootstrap', 'bench.launch.py'],
-                                capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            ['ros2', 'launch', 'bootstrap', 'bench.launch.py'],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('requires an explicit fcu_url', result.stdout + result.stderr)

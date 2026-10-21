@@ -7,16 +7,33 @@ from pathlib import Path
 
 
 def command(bag):
-    return ['ros2', 'bag', 'play', str(bag), '--clock', '--delay', '3',
-            '--disable-keyboard-controls', '--topics', '/camera/image_raw']
+    return [
+        'ros2',
+        'bag',
+        'play',
+        str(bag),
+        '--clock',
+        '--delay',
+        '3',
+        '--disable-keyboard-controls',
+        '--topics',
+        '/camera/image_raw',
+    ]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('session', type=Path, help='session directory or bag directory')
-    parser.add_argument('--domain-id', type=int, required=True, help='offline domain, different from current live domain')
+    parser.add_argument(
+        '--domain-id',
+        type=int,
+        required=True,
+        help='offline domain, different from current live domain',
+    )
     args = parser.parse_args()
-    if not 0 <= args.domain_id <= 101 or args.domain_id == int(os.environ.get('ROS_DOMAIN_ID', '0')):
+    if not 0 <= args.domain_id <= 101 or args.domain_id == int(
+        os.environ.get('ROS_DOMAIN_ID', '0')
+    ):
         parser.error('choose an offline domain in 0..101 different from the current ROS_DOMAIN_ID')
     bag = args.session / 'bag' if (args.session / 'bag').is_dir() else args.session
     if not (bag / 'metadata.yaml').is_file():
