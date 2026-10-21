@@ -4,7 +4,8 @@
   <description>Aterkia spectra, see PRD.md for ownership.</description>
   <maintainer email="feby@computer.org">lainx86</maintainer>
   <license>LicenseRef-Unspecified</license>
-  <buildtool_depend>ament_python</buildtool_depend>
+  <!-- ament_python is the exported build type; setuptools is the build dependency. -->
+  <buildtool_depend>python3-setuptools</buildtool_depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>vision_msgs</depend>

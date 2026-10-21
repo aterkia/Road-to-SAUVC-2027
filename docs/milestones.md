@@ -138,6 +138,32 @@ onboard storage performance is claimed. Configured firmware is explicitly
 operator metadata. Usage, timestamps, missing-topic semantics and remaining
 limits are documented in [recording and replay](recording.md).
 
+## Workspace build and ABI repair (22 October 2026)
+
+After the earlier validation gates, the operator authorized updating 59 ROS
+message/interface/type-support packages in the user's `ros2-lyrical` container.
+Versions before and after are saved in `artifacts/workspace-ros-packages-before.tsv`
+and `artifacts/workspace-ros-packages-after.tsv`. MAVROS libraries now resolve
+their dependencies without the previously missing serialization symbols, and
+`rosdep check` reports all system dependencies satisfied.
+
+A clean build from `/home/lain/Dev/projects/Road-to-SAUVC-2027` in that container
+built all 6 packages. The complete verification passed: 41 system tests, 4 C++
+unit tests and 6 Python package tests (51 actual cases). `colcon test-result`
+reports 47 results including CTest wrappers, with zero errors/failures/skips.
+The final log is `artifacts/workspace-abi-rebuild-verification.log`.
+
+Old generated outputs are preserved in
+`artifacts/pre-abi-rebuild-20261022-065058/`. The workspace cache now references
+the operator's actual path. `scripts/verify.sh` rejects caches from another
+checkout path and supports `ATERKIA_BUILD_ROOT` to isolate container outputs;
+four tests cover output paths, cache rejection and build-failure handling.
+The spectra build dependency is `python3-setuptools`; `ament_python` remains
+its exported build type. Updated setup steps are in the [README](../README.md).
+
+Verification still uses mock sensors/vehicles and a MAVLink loopback fixture.
+The hardware acceptance gates remain pending.
+
 ## Confirmed hardware (22 October 2026)
 
 Pixhawk with ArduSub and a depth sensor. No additional sensor or ball-drop/pickup

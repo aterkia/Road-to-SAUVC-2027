@@ -9,13 +9,45 @@ Development verification uses ROS 2 Lyrical on Ubuntu 26.04. Install dependencie
 on a ROS-enabled machine, then build from the workspace root:
 
 ```bash
-source /opt/ros/lyrical/setup.bash
-source scripts/ros_env.sh
-rosdep install --from-paths src --ignore-src -r -y
-bash scripts/verify.sh
-source install/setup.bash
+source /opt/ros/lyrical/setup.bash &&
+source scripts/ros_env.sh &&
+rosdep update --rosdistro lyrical &&
+sudo apt-get update &&
+rosdep install --from-paths src --ignore-src --rosdistro lyrical -r -y &&
+sudo geographiclib-get-geoids egm96-5 &&
+bash scripts/verify.sh &&
+source install/setup.bash &&
 ros2 launch bootstrap auv.launch.py
 ```
+
+On a fresh ROS installation without `/etc/ros/rosdep/sources.list.d/20-default.list`,
+run `sudo rosdep init` once before `rosdep update`. Run `rosdep update` as your
+normal user; its cache is per user. The command chain stops if dependency
+installation or verification fails, before sourcing or launching the workspace.
+The full test suite starts a MAVROS loopback fixture, which also requires the
+`egm96-5` geoid dataset even when the mission launch itself uses a mock vehicle.
+
+An older Lyrical image can also contain message/type-support packages that are
+incompatible with a newly installed MAVROS. Errors naming missing
+`has_buffer_fields_*` or `cdr_*_with_endpoint_*` symbols require a consistent ROS
+underlay update followed by a workspace rebuild; clearing CMake alone cannot
+fix that ABI mismatch. See [MAVROS bench dependencies](docs/mavros-bench.md).
+
+Build and symlink-install outputs contain absolute paths. They cannot be reused
+between a container checkout at `/ws` and a checkout mounted at another path.
+If verification reports a foreign cache, move `build/`, `install/` and `log/`
+aside, then retry from a fresh terminal with only the ROS underlay sourced.
+
+For container validation sharing the source tree, use an independent output
+directory inside that container:
+
+```bash
+ATERKIA_BUILD_ROOT=/tmp/aterkia-validation bash scripts/verify.sh
+source /tmp/aterkia-validation/install/setup.bash
+```
+
+Keep that output directory specific to its environment and checkout path.
+Ordinary verification still uses the workspace's `build/`, `install/` and `log/`.
 
 Launch accepts `config:=/absolute/path/to/config.yaml`. Only `mode:=mock` is
 implemented for mission execution. A separate telemetry-only
