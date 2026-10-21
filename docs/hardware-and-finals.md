@@ -37,6 +37,12 @@ acceptance gate without these decisions and measured results.
 
 ## Pixhawk / ArduSub integration gate
 
+The [telemetry-only MAVROS bench](mavros-bench.md) now provides connection,
+state, IMU/heading and pressure observation. Pressure-derived depth is opt-in
+after sensor identity and surface calibration are verified. Endpoint, firmware
+metadata and intended mode are parameters. All actuator interfaces remain locked;
+software/UDP tests do not close the hardware commissioning gates below.
+
 1. Select and pin the MAVROS/ArduSub integration, firmware version and vehicle
    control mode; use the existing bridge rather than implementing MAVLink.
 2. Define depth/heading or velocity setpoints, arming/disarming and neutral/hold

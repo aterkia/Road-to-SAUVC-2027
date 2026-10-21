@@ -1,4 +1,8 @@
 #include <algorithm>
+#include <array>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <message_filters/subscriber.hpp>
+#include <message_filters/time_synchronizer.hpp>
 #include <chrono>
 #include <cmath>
 #include <rclcpp/rclcpp.hpp>
@@ -30,6 +34,9 @@ class Wayfinder : public rclcpp::Node {
     image_width_ = positive("image_width", 640.0);
     image_height_ = positive("image_height", 480.0);
     camera_frame_ = declare_parameter("camera_frame", "camera_optical_frame", fixed);
+    calibrated_ = declare_parameter("use_camera_info", false, fixed);
+    bearing_tolerance_ = positive("bearing_tolerance", 0.08);
+    bearing_gain_ = positive("bearing_gain", 1.0);
     confidence_ = positive("min_confidence", 0.7);
     align_tolerance_ = positive("align_tolerance", 0.08);
     near_width_ = positive("near_width_ratio", 0.55);
@@ -56,29 +63,19 @@ class Wayfinder : public rclcpp::Node {
         x_ = msg->pose.pose.position.x; y_ = msg->pose.pose.position.y;
         last_odom_ = Clock::now(); have_odom_ = true;
       });
-    detections_ = create_subscription<vision_msgs::msg::Detection2DArray>("/perception/detections", rclcpp::SensorDataQoS(),
-      [this](vision_msgs::msg::Detection2DArray::ConstSharedPtr msg) {
-        if (msg->header.stamp.sec < 0 || msg->header.stamp.nanosec >= 1000000000) return;
-        double age = (now() - rclcpp::Time(msg->header.stamp)).seconds();
-        const int64_t stamp = rclcpp::Time(msg->header.stamp).nanoseconds();
-        if (msg->header.frame_id != camera_frame_ || age < -0.05 || age > sensor_timeout_ || stamp <= image_stamp_) return;
-        image_stamp_ = stamp; last_image_ = Clock::now(); have_image_ = true; gate_ = false;
-        for (const auto &d : msg->detections) {
-          const auto &b = d.bbox;
-          if (!std::isfinite(b.center.position.x) || !std::isfinite(b.center.position.y) ||
-              !std::isfinite(b.size_x) || !std::isfinite(b.size_y) || b.size_x <= 0 || b.size_y <= 0 ||
-              b.size_x > image_width_ || b.size_y > image_height_ ||
-              b.center.position.x < 0 || b.center.position.x > image_width_ ||
-              b.center.position.y < 0 || b.center.position.y > image_height_) continue;
-          for (const auto &r : d.results) if (r.hypothesis.class_id == "gate" &&
-              std::isfinite(r.hypothesis.score) && r.hypothesis.score >= confidence_ && r.hypothesis.score <= 1) {
-            gate_ = true; error_ = (b.center.position.x - image_width_/2) / (image_width_/2);
-            width_ = b.size_x / image_width_;
-          }
-        }
-        // Low-confidence/malformed detections are not evidence of a clear view.
-        empty_images_ = msg->detections.empty() ? std::min(empty_images_ + 1, 3) : 0;
+    if (calibrated_) {
+      detection_filter_.subscribe(this, "/perception/detections", rclcpp::SensorDataQoS());
+      info_filter_.subscribe(this, "/perception/camera_info", rclcpp::SensorDataQoS());
+      sync_ = std::make_shared<CameraSync>(5, detection_filter_, info_filter_);
+      sync_->registerCallback([this](const vision_msgs::msg::Detection2DArray::ConstSharedPtr &msg,
+                                    const sensor_msgs::msg::CameraInfo::ConstSharedPtr &info) {
+        on_detections(msg, info);
       });
+    } else {
+      detections_ = create_subscription<vision_msgs::msg::Detection2DArray>(
+        "/perception/detections", rclcpp::SensorDataQoS(),
+        [this](vision_msgs::msg::Detection2DArray::ConstSharedPtr msg) { on_detections(msg, nullptr); });
+    }
     health_ = create_subscription<diagnostic_msgs::msg::DiagnosticArray>("/vehicle/health", rclcpp::QoS(1).reliable(),
       [this](diagnostic_msgs::msg::DiagnosticArray::ConstSharedPtr msg) {
         armed_ = false;
@@ -117,6 +114,48 @@ class Wayfinder : public rclcpp::Node {
     timer_ = create_wall_timer(std::chrono::milliseconds(50), [this] { tick(); });
   }
  private:
+  void on_detections(const vision_msgs::msg::Detection2DArray::ConstSharedPtr &msg,
+                     const sensor_msgs::msg::CameraInfo::ConstSharedPtr &info) {
+    if (info) {
+      // Only the full-resolution, monocular rectified geometry emitted by spectra.
+      if (info->header != msg->header || info->width != image_width_ || info->height != image_height_ ||
+          info->distortion_model != "plumb_bob" || info->d.size() != 5 ||
+          info->binning_x > 1 || info->binning_y > 1 || info->roi.x_offset || info->roi.y_offset ||
+          info->roi.width || info->roi.height || info->roi.do_rectify) return;
+      for (double v : info->p) if (!std::isfinite(v)) return;
+      for (double v : info->d) if (v != 0) return;
+      const std::array<double, 9> identity{1, 0, 0, 0, 1, 0, 0, 0, 1};
+      if (info->r != identity || info->p[0] <= 0 || info->p[5] <= 0 ||
+          info->p[2] < 0 || info->p[2] >= image_width_ || info->p[6] < 0 || info->p[6] >= image_height_ ||
+          info->p[1] != 0 || info->p[3] != 0 || info->p[4] != 0 || info->p[7] != 0 ||
+          info->p[8] != 0 || info->p[9] != 0 || info->p[10] != 1 || info->p[11] != 0) return;
+      for (size_t row = 0; row < 3; ++row)
+        for (size_t col = 0; col < 3; ++col)
+          if (info->k[row*3+col] != info->p[row*4+col]) return;
+    }
+    if (msg->header.stamp.sec < 0 || msg->header.stamp.nanosec >= 1000000000) return;
+    double age = (now() - rclcpp::Time(msg->header.stamp)).seconds();
+    const int64_t stamp = rclcpp::Time(msg->header.stamp).nanoseconds();
+    if (msg->header.frame_id != camera_frame_ || age < -0.05 || age > sensor_timeout_ || stamp <= image_stamp_) return;
+    image_stamp_ = stamp; last_image_ = Clock::now(); have_image_ = true; gate_ = false;
+    for (const auto &d : msg->detections) {
+      const auto &b = d.bbox;
+      if (!std::isfinite(b.center.position.x) || !std::isfinite(b.center.position.y) ||
+          !std::isfinite(b.size_x) || !std::isfinite(b.size_y) || b.size_x <= 0 || b.size_y <= 0 ||
+          b.size_x > image_width_ || b.size_y > image_height_ ||
+          b.center.position.x < 0 || b.center.position.x > image_width_ ||
+          b.center.position.y < 0 || b.center.position.y > image_height_) continue;
+      for (const auto &r : d.results) if (r.hypothesis.class_id == "gate" &&
+          std::isfinite(r.hypothesis.score) && r.hypothesis.score >= confidence_ && r.hypothesis.score <= 1) {
+        gate_ = true;
+        error_ = info ? std::atan2(b.center.position.x - info->p[2], info->p[0]) :
+          (b.center.position.x - image_width_/2) / (image_width_/2);
+        width_ = b.size_x / image_width_;
+      }
+    }
+    // Low-confidence/malformed detections are not evidence of a clear view.
+    empty_images_ = msg->detections.empty() ? std::min(empty_images_ + 1, 3) : 0;
+  }
   bool fresh(Clock::time_point received, int64_t stamp) const {
     double age = (now().nanoseconds() - stamp) / 1e9;
     return age >= -0.05 && age < sensor_timeout_ &&
@@ -175,8 +214,8 @@ class Wayfinder : public rclcpp::Node {
           phase("SEARCH"); cmd.angular.z = yaw_rate_ / 2;
         } else {
           // Optical image x points right; positive FLU yaw turns left.
-          cmd.angular.z = std::clamp(-error_, -yaw_rate_, yaw_rate_);
-          if (std::abs(error_) > align_tolerance_) { phase("ALIGN"); }
+          cmd.angular.z = std::clamp(-error_ * (calibrated_ ? bearing_gain_ : 1.0), -yaw_rate_, yaw_rate_);
+          if (std::abs(error_) > (calibrated_ ? bearing_tolerance_ : align_tolerance_)) { phase("ALIGN"); }
           else {
             phase("APPROACH"); cmd.linear.x = speed_;
             if (width_ >= near_width_) {
@@ -195,6 +234,12 @@ class Wayfinder : public rclcpp::Node {
       goal_->publish_feedback(feedback);
     }
   }
+  using CameraSync = message_filters::TimeSynchronizer<vision_msgs::msg::Detection2DArray, sensor_msgs::msg::CameraInfo>;
+  message_filters::Subscriber<vision_msgs::msg::Detection2DArray> detection_filter_;
+  message_filters::Subscriber<sensor_msgs::msg::CameraInfo> info_filter_;
+  std::shared_ptr<CameraSync> sync_;
+  bool calibrated_{false};
+  double bearing_tolerance_, bearing_gain_;
   double sensor_timeout_, task_timeout_, yaw_{0}, target_yaw_{0};
   bool armed_{false}, have_odom_{false}, running_{false};
   std::string task_name_;

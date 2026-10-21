@@ -18,7 +18,8 @@ ros2 launch bootstrap auv.launch.py
 ```
 
 Launch accepts `config:=/absolute/path/to/config.yaml`. Only `mode:=mock` is
-implemented. Startup does not authorize motion. Hardware commissioning and a
+implemented for mission execution. A separate telemetry-only
+[MAVROS bench launch](docs/mavros-bench.md) is available. Startup does not authorize motion. Hardware commissioning and a
 physical kill switch are separate requirements; this workspace does not drive
 real thrusters.
 
@@ -34,7 +35,8 @@ ROS_DOMAIN_ID=77 python3 -m pytest tests/test_mission.py -k qualification -s
 This launches the stack through bootstrap, supplies synthetic camera frames from
 a fixed gate and measured mock position, authorizes the mock, then verifies
 pass → U-turn → return pass. It records images, detections, telemetry, motion and
-mission transitions under `artifacts/qualification-*/bag` in MCAP format.
+mission transitions under `artifacts/recording-mock-*/session/bag` in MCAP format,
+alongside configuration and parameter evidence.
 The full `scripts/verify.sh` also tests stale data, invalid commands, watchdog,
 abort/cancel, competing goals, timeout and the absence of false success.
 It uses ROS domain 77 by default (`ATERKIA_TEST_DOMAIN_ID` overrides this).
@@ -61,14 +63,30 @@ duration alone does not complete a mission task.
 In separate ROS-enabled terminals, source the workspace and `scripts/ros_env.sh`:
 
 ```bash
-ros2 run spectra spectra_node --ros-args -p use_sim_time:=true
-ros2 bag play artifacts/qualification-EXAMPLE/bag --clock --topics /camera/image_raw
+# Offline terminal (choose an unused domain):
+ROS_DOMAIN_ID=78 ros2 run spectra spectra_node --ros-args -p use_sim_time:=true
+# From a terminal configured for the original live domain:
+ros2 run bootstrap replay_perception.py artifacts/recording-mock-EXAMPLE/session --domain-id 78
 ```
 
 Use the actual recording path printed by the qualification test. Replay only
 images so recorded motion commands or mission results are not injected into a
-live stack. See [runtime contracts](docs/interfaces.md) for frames, QoS, timestamp
+live stack. See [recording sessions](docs/recording.md) for mock/bench capture,
+configuration snapshots, stop conditions and replay setup, and
+[runtime contracts](docs/interfaces.md) for frames, QoS, timestamp
 rules and the simulation-only passage criterion.
+
+## Camera calibration and MAVROS bench
+
+[Camera calibration](docs/camera-calibration.md) covers the offline chessboard
+tool, raw versus rectified input, and paired CameraInfo for bearing guidance.
+Default mock guidance remains uncalibrated; measured hardware intrinsics must
+be supplied explicitly.
+
+[MAVROS bench](docs/mavros-bench.md) covers dependencies, configurable serial/UDP
+connections and validated telemetry. Arming, disarming, mode changes and motion
+transmission are locked until hardware configuration is commissioned. The bench
+never launches mission/guidance or fabricates horizontal odometry.
 
 ## Current limits
 

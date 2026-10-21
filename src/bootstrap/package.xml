@@ -12,6 +12,14 @@
   <depend>wayfinder</depend>
   <depend>helm</depend>
   <depend>spectra</depend>
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <test_depend>rosbag2_py</test_depend>
+  <test_depend>mavros_msgs</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>rclpy</test_depend>

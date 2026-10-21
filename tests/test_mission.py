@@ -1,6 +1,5 @@
 import math
 from pathlib import Path
-import signal
 import subprocess
 import tempfile
 import time
@@ -18,6 +17,7 @@ from vision_msgs.msg import Detection2DArray
 
 from mock_scene import GateScene
 from ros_test import RosTest
+from test_recording import start_recording, finish_recording
 
 
 class MissionTest(RosTest):
@@ -38,13 +38,14 @@ class MissionTest(RosTest):
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / 'auv.yaml'
         path.write_text(yaml.safe_dump(config))
+        self.config_path = path
         self.processes.append(subprocess.Popen(
             ['ros2', 'launch', 'bootstrap', 'auv.launch.py', f'config:={path}']))
         self.wait(lambda: self.health and self.odom and self.detections and self.status)
 
     def authorize(self):
         self.assertTrue(self.call('/vehicle/arm', SetBool, SetBool.Request(data=True)).success)
-        self.wait(lambda: self.health[-1].status[0].message == 'ARMED')
+        self.wait_armed_delivery(self.health)
 
     def start_mission(self):
         self.authorize()
@@ -52,16 +53,10 @@ class MissionTest(RosTest):
 
     def test_qualification_pass_turn_return_with_evidence_and_bag(self):
         self.stack()
-        # Record a real ROS session as inspectable evidence. No real actuators exist.
-        Path('artifacts').mkdir(exist_ok=True)
-        recording = Path(tempfile.mkdtemp(prefix='qualification-', dir='artifacts')) / 'bag'
-        recorder = subprocess.Popen(['ros2', 'bag', 'record', '-o', str(recording),
-                                     '--storage-preset-profile', 'zstd_fast', '--topics',
-                                     '/camera/image_raw', '/perception/detections',
-                                     '/vehicle/odometry', '/vehicle/applied_cmd',
-                                     '/mission/status', '/navigation/status'])
-        self.processes.append(recorder)
-        self.wait(lambda: any('rosbag2_recorder' in n for n in self.node.get_node_names()))
+        recorder, session = start_recording(self, 'mock', self.config_path,
+            ['/camera/image_raw', '/perception/detections', '/cmd_vel', '/vehicle/applied_cmd',
+             '/vehicle/health', '/mission/status', '/navigation/task/_action/feedback',
+             '/navigation/task/_action/status'])
         self.start_mission()
         self.wait(lambda: any(m.data == 'COMPLETED' for m in self.status), timeout=40)
         completed = [m.data for m in self.status if m.data.startswith('TASK_COMPLETED')]
@@ -74,11 +69,20 @@ class MissionTest(RosTest):
         self.assertTrue(any('PASS' in m.data for m in self.navigation))
         self.wait(lambda: self.health[-1].status[0].message == 'DISARMED')
         self.wait(lambda: self.output[-1].linear.x == 0)
-        recorder.send_signal(signal.SIGINT)
-        self.assertEqual(recorder.wait(timeout=10), 0)
-        self.processes.remove(recorder)
-        self.assertTrue((recording / 'metadata.yaml').exists())
-        print(f'Qualification recording: {recording}', flush=True)
+        manifest, bag = finish_recording(self, recorder, session,
+            ['/cmd_vel', '/vehicle/applied_cmd', '/vehicle/health', '/mission/status', '/vehicle/odometry'])
+        for topic in ('/camera/image_raw', '/perception/detections', '/cmd_vel', '/vehicle/applied_cmd',
+                      '/vehicle/health', '/mission/status', '/navigation/task/_action/feedback'):
+            self.assertGreater(manifest['topic_message_counts'][topic], 0)
+        self.assertTrue(all(result['returncode'] == 0 for result in manifest['runtime_parameters'].values()))
+        self.assertTrue(any(m.data == 'COMPLETED' for m, _ in bag['/mission/status']))
+        self.assertTrue(any(m.status[0].message == 'ARMED' for m, _ in bag['/vehicle/health']))
+        self.assertTrue(any(m.linear.x > 0 for m, _ in bag['/cmd_vel']))
+        self.assertTrue(any(m.linear.x > 0 for m, _ in bag['/vehicle/applied_cmd']))
+        times = [t for _, t in bag['/cmd_vel']]
+        max_gap = max(b - a for a, b in zip(times, times[1:])) / 1e9
+        self.assertLess(max_gap, 0.4, 'recorded command gap exceeded mock watchdog budget')
+        print(f'Qualification recording: {session}; max command receive gap={max_gap:.3f}s', flush=True)
 
     def test_abort_during_motion_does_not_auto_resume(self):
         self.stack()

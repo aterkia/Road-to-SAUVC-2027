@@ -6,10 +6,11 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import ParameterDescriptor
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from vision_msgs.msg import Detection2D, Detection2DArray, ObjectHypothesisWithPose
 
 from spectra.detector import detect_gate, detect_finals
+from spectra.calibration import Calibration
 
 
 class Spectra(Node):
@@ -24,6 +25,13 @@ class Spectra(Node):
         self.frame = self.declare_parameter('camera_frame', 'camera_optical_frame', fixed).value
         self.width = self.declare_parameter('image_width', 640, fixed).value
         self.height = self.declare_parameter('image_height', 480, fixed).value
+        geometry = self.declare_parameter('input_geometry', 'uncalibrated', fixed).value
+        calibration_file = self.declare_parameter('calibration_file', '', fixed).value
+        if geometry not in ('uncalibrated', 'raw', 'rectified') or (
+                bool(calibration_file) != (geometry != 'uncalibrated')):
+            raise ValueError('raw/rectified input requires calibration_file; uncalibrated forbids it')
+        self.calibration = (Calibration(calibration_file, self.width, self.height, geometry)
+                            if calibration_file else None)
         self.finals = self.declare_parameter('enable_finals', False, fixed).value
         self.drum_lower = self.declare_parameter('drum_hsv_lower', [90, 120, 80], fixed).value
         self.drum_upper = self.declare_parameter('drum_hsv_upper', [130, 255, 255], fixed).value
@@ -50,6 +58,7 @@ class Spectra(Node):
         # Small frames do not benefit from a worker per host CPU in a container.
         cv2.setNumThreads(1)
         self.publisher = self.create_publisher(Detection2DArray, '/perception/detections', qos_profile_sensor_data)
+        self.info_publisher = self.create_publisher(CameraInfo, '/perception/camera_info', qos_profile_sensor_data)
         self.subscription = self.create_subscription(Image, '/camera/image_raw', self.on_image, qos_profile_sensor_data)
         self.get_logger().info('Gate detector ready; calibrate HSV using pool recordings')
 
@@ -63,6 +72,8 @@ class Spectra(Node):
             return
         try:
             image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            if self.calibration:
+                image = self.calibration.rectify(image)
             gate = detect_gate(image, self.lower, self.upper, self.min_area, self.min_aspect)
         except (ValueError, RuntimeError, CvBridgeError, cv2.error) as error:
             self.get_logger().warning(f'Rejected image: {error}', throttle_duration_sec=2.0)
@@ -86,6 +97,8 @@ class Spectra(Node):
             detection.results.append(hypothesis)
             output.detections.append(detection)
         # Empty arrays mean a fresh image with no target; silence means camera failure.
+        if self.calibration:
+            self.info_publisher.publish(self.calibration.camera_info(msg.header))
         self.publisher.publish(output)
 
 

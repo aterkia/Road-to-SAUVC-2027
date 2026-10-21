@@ -1,0 +1,36 @@
+# Explicit capture set; missing publishers are reported in session.json.
+actions: [/navigation/task]
+common_topics:
+  - /camera/image_raw
+  - /camera/camera_info
+  - /perception/detections
+  - /perception/camera_info
+  - /cmd_vel
+  - /vehicle/health
+  - /vehicle/depth
+  - /vehicle/heading
+  - /mission/status
+  - /navigation/status
+  - /navigation/task/_action/status
+  - /navigation/task/_action/feedback
+  - /parameter_events
+  - /rosout
+profiles:
+  mock:
+    nodes: [/helm, /spectra, /wayfinder, /orchestrator]
+    topics: [/vehicle/odometry, /vehicle/applied_cmd]
+  bench:
+    nodes: [/helm, /mavros_node, /mavros, /mavros/imu, /mavros/sys, /mavros/time]
+    topics:
+      - /vehicle/state
+      - /vehicle/imu
+      - /vehicle/pressure
+      - /mavros/state
+      - /mavros/imu/data
+      - /mavros/imu/static_pressure
+      - /mavros/battery
+      - /mavros/statustext/recv
+      - /diagnostics
+      # Capture feedback if a future verified bridge publishes it; never enable a plugin here.
+      - /mavros/rc/in
+      - /mavros/rc/out

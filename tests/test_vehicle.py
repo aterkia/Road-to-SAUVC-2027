@@ -87,7 +87,7 @@ class GuidanceTest(RosTest):
         odom = self.observe('/vehicle/odometry', Odometry, qos_profile_sensor_data)
         self.wait(lambda: health and odom)
         self.assertTrue(self.call('/vehicle/arm', SetBool, SetBool.Request(data=True)).success)
-        self.wait(lambda: health[-1].status[0].message == 'ARMED')
+        self.wait_armed_delivery(health)
         handle = self.goal('TURN', timeout=9.0)
         self.assertTrue(handle.accepted)
         self.wait(lambda: any('COMPLETED' in m.data for m in status), timeout=12)

@@ -30,7 +30,7 @@ files. The deleted mission type implementation is not restored.
 | M3 | Mock passed; hardware pending | 17 system tests through colcon, 0 failures; `artifacts/m3.log`; recorded qualification pass/turn/return |
 | M4 | Available subset passed; milestone incomplete | Drum/flare lab baselines + prerequisite tests pass; payload/localization and final rules block full completion |
 
-## Latest software gate
+## Original M0–M4 software gate
 
 `artifacts/m4.log`: all 6 packages built; 18 system tests, 4 C++ prerequisite
 tests and 6 Python package tests passed. `colcon test-result` reports 24 results
@@ -55,6 +55,88 @@ Final verification on 22 October 2026:
 The local validation image was `ros2-docker-ros2:latest` (`cec14872ff11`), ROS 2
 Lyrical / Ubuntu 26.04. The user's existing `ros2-lyrical` container was not
 modified; a separate `aterkia-validation` container was used for this session.
+
+## Research adaptations: ideas 1 and 2 (22 October 2026)
+
+Operator scope at that gate: implement idea 1 first, verify it, then idea 2.
+Ideas 3–7 were deferred at that point. No new runtime package, detector/model,
+SLAM, payload controller or recording feature was added in those two adaptations.
+
+| Stage | Implemented | Verification |
+| --- | --- | --- |
+| Idea 1 | Offline chessboard calibration with per-view RMS, optional fixed-map rectification, matched CameraInfo and physical bearing in wayfinder | Before idea 2: all 6 packages built; 25 system tests + 4 C++ tests + 6 Python package tests passed (`artifacts/idea1-verification.log`) |
+| Idea 2 | Separate MAVROS/helm bench, configurable endpoint/firmware metadata/mode, state/IMU/pressure telemetry, explicitly locked arm/mode/motion interfaces | MAVROS UDP peer checks actual loaded plugins, NED→ENU and hPa→Pa, command rejection and disconnect (`artifacts/idea2-udp.log`) |
+| Combined regression | Both adaptations with existing mock missions | All 6 packages built; 33 system tests + 4 C++ tests + 6 Python package tests passed (`artifacts/adaptations-verification.log`); zero errors/failures/skips |
+
+The 33 system tests include 8 calibration tests and 7 MAVROS bench tests.
+`colcon test-result` reports 39 results including CTest wrappers; the 6 Python
+package unittest cases are printed separately. The final gate also exercises the
+complete chessboard CLI and protects existing calibration files against overwrite.
+A separate build sourced only from the ROS underlay, with new build/install
+directories in `/tmp/aterkia-adaptation-*`, also built all 6 packages successfully
+(`artifacts/adaptations-clean-build.log`). Python compilation, local documentation
+links and `git diff --check` passed.
+
+Validation uses MAVROS 2.16.0, MAVLink 2026.9.9 and OpenCV 4.10.0 on ROS 2 Lyrical.
+The separate validation container was updated with MAVROS, the egm96-5 geoid and
+compatible ROS interface/type-support packages; the original image alone no longer
+describes its installed dependencies. Selected exact versions are in
+`artifacts/adaptations-environment.txt`. The user's `ros2-lyrical` container was
+not modified.
+
+The MAVLink peer is a loopback protocol fixture, not ArduSub SITL or hardware.
+No real camera/housing calibration, sensor mapping, serial-link verification,
+mode/arming acknowledgement, thruster neutral/watchdog or pool commissioning is
+claimed. Hardware control remains unavailable even when `control_enabled` is
+requested. Pressure-to-depth is disabled until sensor identity, surface pressure
+and water density are supplied and verified. The M1/M3 hardware gates and full M4
+therefore remain open.
+
+Usage and contracts: [camera calibration](camera-calibration.md),
+[MAVROS bench](mavros-bench.md). Failed intermediate runs remain under ignored
+`artifacts/`; the named final verification log above is the combined passing run.
+
+## Research adaptation: idea 3 (22 October 2026)
+
+Operator subsequently authorized idea 3. Ideas 4–7 remain deferred. Recording
+and restricted replay live in `scripts/` with installed bootstrap executables
+and capture/QoS configuration; no new runtime package or vehicle control path.
+
+| Stage | Implemented | Verification |
+| --- | --- | --- |
+| Mock recording | Camera/perception, command/applied output, odometry, health, mission and navigation Action feedback/status; configuration hashes and live parameter snapshots | Qualification pass → turn → return completes and the MCAP is reopened and inspected |
+| Bench recording | Raw/normalized telemetry, observed mode/arming, actual endpoint override and configured firmware metadata | MAVROS loopback fixture records disconnect while actuator requests remain rejected; missing RC feedback is explicit |
+| Session lifecycle and replay | Duration/SIGINT flushing, disk-reserve stop, no overwrite, calibration copy, image-only replay on a distinct domain | Four recording tests validate storage contents/timestamps, invalid limits, simulated disk pressure and absence of command publishers during replay |
+| Combined regression | Existing mock missions and adaptations 1–3 | `artifacts/idea3-verification.log`: all 6 packages built; 37 system tests, 4 C++ tests and 6 Python package tests passed (47 actual cases) |
+
+`colcon test-result` reports 43 results including CTest wrappers, zero
+errors/failures/skips. Python package unittest cases are reported separately.
+The integration tests invoke the installed recording/replay tools through
+`ros2 run`. The 12 calibration/recording tests also passed in the focused run
+`artifacts/idea3-startup-replay-tests.log`. Python compilation, local documentation
+links and `git diff --check` passed.
+
+Final session paths and topic counts are in `artifacts/idea3-evidence.json`.
+The qualification command receive gap peaked at 0.372 seconds in the combined
+run, within the 0.4-second mock test budget but with limited margin. An earlier
+isolated qualification run measured 0.051 seconds. These are receive-time
+observations in the development container, not onboard timing guarantees;
+repeat throughput/deadline measurements with the actual camera and storage.
+Selected dependency versions are in `artifacts/idea3-environment.txt`.
+
+Intermediate runs exposed Fast DDS shared-memory errors and test startup races.
+Final verification ran sequentially in a freshly restarted validation container.
+Mock fixtures now observe several armed telemetry updates before requesting
+goals, following the existing sensor-fixture settling approach; production goal
+rejection, watchdogs and mission retry behavior were not relaxed. Replay has a
+three-second discovery delay, and its test uses an executor for the offline
+ROS context. Failed/interrupted intermediate logs remain under `artifacts/`;
+the named final log above is the complete passing gate.
+
+No Pixhawk, physical actuator feedback, hardware firmware-version detection or
+onboard storage performance is claimed. Configured firmware is explicitly
+operator metadata. Usage, timestamps, missing-topic semantics and remaining
+limits are documented in [recording and replay](recording.md).
 
 ## Confirmed hardware (22 October 2026)
 

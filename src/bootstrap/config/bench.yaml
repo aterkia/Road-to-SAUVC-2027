@@ -1,0 +1,44 @@
+# Telemetry-only bench. Endpoint is supplied explicitly at launch or here.
+/mavros_node:
+  ros__parameters:
+    fcu_url: ""
+    gcs_url: ""
+    tgt_system: 1
+    tgt_component: 1
+/mavros:
+  ros__parameters:
+    fcu_protocol: v2.0
+    # Do not load command, RC override, servo, or setpoint plugins.
+    plugin_allowlist: [sys_status, sys_time, imu]
+    plugin_denylist: ['*']  # MAVROS allowlist overrides this deny-all baseline.
+/**/sys:
+  ros__parameters:
+    heartbeat_rate: 1.0
+    conn_timeout: 3.0
+/**/time:
+  ros__parameters:
+    timesync_mode: MAVLINK
+    timesync_rate: 10.0
+    system_time_rate: 1.0
+/**/imu:
+  ros__parameters:
+    frame_id: base_link
+helm:
+  ros__parameters:
+    use_sim_time: false
+    firmware_family: ardusub
+    firmware_version: unverified
+    control_mode: ""
+    control_enabled: false  # true is rejected; no actuator transport exists yet.
+    state_topic: /mavros/state
+    imu_topic: /mavros/imu/data
+    pressure_topic: /mavros/imu/static_pressure
+    imu_frame: base_link
+    state_timeout: 3.0  # FCU heartbeat is normally slower than IMU.
+    telemetry_timeout: 0.5
+    # static_pressure may be the Pixhawk internal barometer, NOT the water sensor.
+    # Enable only after verifying source identity, surface reference and density.
+    pressure_is_depth_sensor: false
+    surface_pressure_pa: 0.0
+    water_density_kg_m3: 0.0
+    gravity_m_s2: 9.80665

@@ -16,6 +16,9 @@ wayfinder:
     image_height: 480.0
     camera_frame: camera_optical_frame
     min_confidence: 0.7
+    use_camera_info: false  # Mock normalized-pixel guidance; enable with calibrated spectra.
+    bearing_tolerance: 0.08  # radians
+    bearing_gain: 1.0  # (rad/s)/rad
     align_tolerance: 0.08
     near_width_ratio: 0.55
     pass_distance: 1.2
@@ -26,6 +29,8 @@ spectra:
   ros__parameters:
     image_width: 640
     image_height: 480
+    input_geometry: uncalibrated  # raw or rectified requires calibration_file
+    calibration_file: ""
     enable_finals: false
     hsv_lower: [0, 120, 80]
     hsv_upper: [25, 255, 255]

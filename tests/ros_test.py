@@ -54,6 +54,13 @@ class RosTest(unittest.TestCase):
         self.subscriptions.append(self.node.create_subscription(msg_type, topic, messages.append, qos))
         return messages
 
+    def wait_armed_delivery(self, health):
+        # Separate DDS readers may see the first armed sample at different times.
+        # Keep spinning sensor fixtures for several updates before requesting a goal.
+        baseline = len(health)
+        self.wait(lambda: len(health) >= baseline + 3 and
+                  all(m.status[0].message == 'ARMED' for m in health[-3:]))
+
     def call(self, service, srv_type, request):
         client = self.node.create_client(srv_type, service)
         self.wait(client.service_is_ready, message=service)

@@ -22,8 +22,13 @@ Changing image resolution requires rechecking payload size, buffers and latency.
 | `/vehicle/depth` | Float64, metres positive down; sensor-data QoS; mock fixed depth 1 m |
 | `/vehicle/heading` | Float64, ENU yaw radians, zero east, counterclockwise positive; sensor-data QoS |
 | `/vehicle/health` | DiagnosticArray; reliable keep-last 1; `helm`: OK/ARMED, WARN/DISARMED, ERROR/DISCONNECTED |
-| `/vehicle/arm` | SetBool; explicit operator authorization; false always stops/disarms |
-| `/safety/abort` | Trigger; direct helm stop/disarm, independent of mission processing |
+| `/vehicle/arm` | Mock SetBool; explicit operator authorization; false always stops/disarms in mock |
+| `/safety/abort` | Mock Trigger; direct helm stop/disarm, independent of mission processing |
+
+The table describes the mission/mock launch. The separate [MAVROS bench](mavros-bench.md)
+publishes telemetry and WARN/ERROR health, never `ARMED` authorization or
+odometry. Its arm/mode/abort services explicitly return failure because no
+hardware commands are enabled; it cannot claim a successful hardware stop.
 
 Startup, disarm, abort, command timeout, invalid command and connection/telemetry
 loss all produce zero surge/yaw. A new explicit arm is needed after any disarm.
@@ -48,6 +53,13 @@ that header and publishes `vision_msgs/Detection2DArray` with class `gate`, pixe
 bounding boxes and a geometric quality score in [0, 1]. It is not a calibrated
 probability. A fresh empty array means no gate; no messages means invalid/stale
 input. Guidance checks source timestamps and receive-time freshness independently.
+
+Optional [calibration](camera-calibration.md) makes boxes refer to rectified
+pixels and publishes `/perception/camera_info` (sensor_msgs/CameraInfo, sensor
+QoS) with exactly the same source header. With `use_camera_info: true`, guidance
+requires a valid exact-time pair and computes `atan2(u-cx, fx)` from P. Invalid
+or missing calibration does not fall back to normalized-pixel guidance. Mock
+defaults retain the explicit uncalibrated mode.
 
 The baseline finds two similarly sized, vertically overlapping orange posts.
 HSV bounds, post shape/area and guidance thresholds live in YAML. The configured
@@ -80,3 +92,12 @@ next configured task and disarms on completion, failure or abort.
 Arming alone never starts a task. Reconnection does not resume either a goal or
 a mission. Startup, abort and failure handling are tested independently of the
 available hardware, whose commissioning remains a separate acceptance gate.
+
+## Recording evidence
+
+[Session recording](recording.md) subscribes to existing interfaces without
+vehicle commands. Mock recordings include `/cmd_vel` and `/vehicle/applied_cmd`;
+bench recordings include raw/normalized telemetry and observed arming/mode.
+Unavailable feedback is listed explicitly. Camera/perception source stamps are
+preserved; unstamped commands/status use bag receive times. Perception replay
+publishes camera input on a separate domain and excludes recorded control output.

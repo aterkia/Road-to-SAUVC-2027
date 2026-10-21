@@ -1,0 +1,29 @@
+# Best effort subscriptions cannot back-pressure sensor/control publishers.
+# Durability is retained for latched mission/action state.
+/camera/image_raw: {reliability: best_effort, durability: volatile, history: keep_last, depth: 5}
+/camera/camera_info: {reliability: best_effort, durability: volatile, history: keep_last, depth: 5}
+/perception/detections: {reliability: best_effort, durability: volatile, history: keep_last, depth: 5}
+/perception/camera_info: {reliability: best_effort, durability: volatile, history: keep_last, depth: 5}
+/cmd_vel: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/applied_cmd: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/health: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/odometry: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/depth: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/heading: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/state: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/imu: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/vehicle/pressure: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/mission/status: {reliability: best_effort, durability: transient_local, history: keep_last, depth: 50}
+/navigation/status: {reliability: best_effort, durability: volatile, history: keep_last, depth: 50}
+/navigation/task/_action/status: {reliability: best_effort, durability: transient_local, history: keep_last, depth: 50}
+/navigation/task/_action/feedback: {reliability: best_effort, durability: volatile, history: keep_last, depth: 50}
+/mavros/state: {reliability: best_effort, durability: transient_local, history: keep_last, depth: 20}
+/mavros/imu/data: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/mavros/imu/static_pressure: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/mavros/battery: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/mavros/statustext/recv: {reliability: best_effort, durability: volatile, history: keep_last, depth: 50}
+/mavros/rc/in: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/mavros/rc/out: {reliability: best_effort, durability: volatile, history: keep_last, depth: 20}
+/diagnostics: {reliability: best_effort, durability: volatile, history: keep_last, depth: 50}
+/parameter_events: {reliability: best_effort, durability: volatile, history: keep_last, depth: 100}
+/rosout: {reliability: best_effort, durability: volatile, history: keep_last, depth: 100}
