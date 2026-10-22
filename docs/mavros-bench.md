@@ -30,13 +30,31 @@ type-support secara bersama, lalu build ulang workspace. Error seperti
 `undefined symbol: has_buffer_fields_...` menandakan underlay tidak konsisten,
 bukan kegagalan koneksi Pixhawk.
 
-Salin `src/bootstrap/config/bench.yaml` untuk kendaraan. Nilai berikut ialah
-**contoh sintaks**, bukan endpoint Pixhawk yang diasumsikan benar:
+Endpoint serial bawaan disimpan di `src/bootstrap/config/bench.yaml` pada
+`/mavros_node.ros__parameters.fcu_url`: `serial:///dev/ttyACM0:115200`.
+Port dan baud rate tersebut belum diverifikasi pada Pixhawk nyata. Sesuaikan
+nilainya sekali di YAML jika perangkat berbeda, lalu build ulang `bootstrap`.
+Untuk penggunaan sehari-hari, cukup jalankan:
 
 ```bash
-# Port serial dan baud harus sesuai perangkat yang sudah dipilih.
+ros2 launch bootstrap bench.launch.py
+```
+
+Jika memakai Docker, port serial harus tersedia dan dapat diakses oleh user di
+dalam container. Konfigurasi `/home/lain/ros2-docker/compose.yaml` meneruskan
+`/dev/ttyACM0` dan menambahkan grup akses dari `SERIAL_GID` pada `.env`.
+Nilainya harus sesuai `stat -c %g /dev/ttyACM0` pada host. Sambungkan Pixhawk
+sebelum menjalankan Compose. Setelah perubahan Compose, buat ulang container
+dengan `docker compose up -d --force-recreate ros2` dari direktori tersebut;
+image tidak perlu dibangun ulang. Jika USB dicabut dan disambungkan kembali,
+buat ulang container apabila mapping perangkat lama tidak lagi bekerja.
+
+Konfigurasi kendaraan lain atau endpoint UDP tetap dapat dipilih saat diperlukan:
+
+```bash
+# Gunakan endpoint serial dari file konfigurasi kendaraan.
 ros2 launch bootstrap bench.launch.py \
-  config:=/absolute/path/bench.yaml fcu_url:=serial:///dev/ttyACM0:115200
+  config:=/absolute/path/bench.yaml
 
 # UDP bind lokal dan remote harus mengikuti konfigurasi FCU/SITL.
 ros2 launch bootstrap bench.launch.py \
@@ -44,7 +62,9 @@ ros2 launch bootstrap bench.launch.py \
 ```
 
 Tanpa argumen endpoint, launch membaca `/mavros_node.ros__parameters.fcu_url`
-dari YAML. Nilai kosong menggagalkan launch. Target system/component juga
+dari YAML bawaan atau file yang dipilih melalui `config`. Argumen `fcu_url`
+menggantikan nilai YAML bila diberikan; nilai kosong pada YAML tanpa pengganti
+menggagalkan launch. Target system/component juga
 parameter MAVROS; ID 1 pada template harus diverifikasi untuk kendaraan.
 `helm.firmware_family`, `firmware_version`, dan `control_mode` menyimpan
 konfigurasi yang dipilih operator, bukan hasil pendeteksian firmware. Mode

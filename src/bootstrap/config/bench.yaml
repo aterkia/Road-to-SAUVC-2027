@@ -1,7 +1,7 @@
-# Telemetry-only bench. Endpoint is supplied explicitly at launch or here.
+# Telemetry-only bench. Set the vehicle's serial port and baud rate here once.
 /mavros_node:
   ros__parameters:
-    fcu_url: ""
+    fcu_url: "serial:///dev/ttyACM0:115200"
     gcs_url: ""
     tgt_system: 1
     tgt_component: 1

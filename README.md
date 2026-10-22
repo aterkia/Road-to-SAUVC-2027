@@ -120,6 +120,10 @@ connections and validated telemetry. Arming, disarming, mode changes and motion
 transmission are locked until hardware configuration is commissioned. The bench
 never launches mission/guidance or fabricates horizontal odometry.
 
+The serial endpoint defaults to `serial:///dev/ttyACM0:115200` in
+`src/bootstrap/config/bench.yaml`. Adjust it once for the actual device and rebuild
+`bootstrap`; launch with `ros2 launch bootstrap bench.launch.py`.
+
 ## Current limits
 
 M0–M3 are verified in mock simulation. M4 has tested drum/flare lab detectors
