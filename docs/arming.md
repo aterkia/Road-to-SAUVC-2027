@@ -52,11 +52,11 @@ Implementasi tidak menggunakan force-arm dan tidak melewati pemeriksaan arming F
   Tidak ada retry otomatis. Respons terlambat tidak mengubah hasil yang sudah
   dikembalikan. Timeout tidak membatalkan perintah yang sudah dikirim ke FCU.
 
-Status health `ARMING_ONLY` berarti arming/disarming diaktifkan, sementara mode
-kendali, gerakan, dan misi hardware belum tersedia. Health tetap WARN/ERROR dan
-tidak mengeluarkan status `ARMED` yang mengizinkan misi mock. Parameter
-`control_enabled: true` masih ditolak. `/safety/abort` masih tidak mengaku dapat
-menghentikan kendaraan; disarm harus diminta secara eksplisit.
+Pada launch ini, status health `ARMING_ONLY` berarti hanya arming/disarming yang
+diaktifkan. Health tetap WARN/ERROR dan tidak mengeluarkan izin misi `ARMED`.
+`/safety/abort` pada profil bench ini belum menghentikan kendaraan; disarm harus
+diminta secara eksplisit. Adapter autonomous diuji terpisah; lihat
+[progres dan bukti pengujian](autonomous-verification.md).
 
 Plugin MAVROS `command` juga menyediakan service command umum. Pembatasan adapter
 ini bukan access control ROS: node lain dapat memanggil service MAVROS secara

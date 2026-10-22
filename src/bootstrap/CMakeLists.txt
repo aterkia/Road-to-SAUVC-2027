@@ -6,8 +6,14 @@ install(PROGRAMS ../../scripts/record_session.py ../../scripts/replay_perception
   DESTINATION lib/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
-  ament_add_pytest_test(system_tests "${CMAKE_CURRENT_SOURCE_DIR}/../../tests"
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
-    TIMEOUT 240)
+  # Give each ROS test group a fresh Python/DDS process; groups share one isolated domain.
+  file(GLOB system_test_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../tests/test_*.py")
+  foreach(test_file IN LISTS system_test_files)
+    get_filename_component(test_name "${test_file}" NAME_WE)
+    ament_add_pytest_test(${test_name} "${test_file}"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+      TIMEOUT 180)
+    set_tests_properties(${test_name} PROPERTIES RUN_SERIAL TRUE)
+  endforeach()
 endif()
 ament_package()

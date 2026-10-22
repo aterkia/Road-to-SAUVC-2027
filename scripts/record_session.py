@@ -373,7 +373,7 @@ def record(args):
 def main():
     share = Path(get_package_share_directory('bootstrap')) / 'config'
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', choices=('mock', 'bench'), required=True)
+    parser.add_argument('--profile', choices=('mock', 'bench', 'autonomous'), required=True)
     parser.add_argument('--output', type=Path, required=True, help='new session directory')
     parser.add_argument(
         '--config',

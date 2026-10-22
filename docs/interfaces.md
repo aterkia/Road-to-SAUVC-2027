@@ -101,3 +101,76 @@ bench recordings include raw/normalized telemetry and observed arming/mode.
 Unavailable feedback is listed explicitly. Camera/perception source stamps are
 preserved; unstamped commands/status use bag receive times. Perception replay
 publishes camera input on a separate domain and excludes recorded control output.
+
+## Onboard ArduSub adapter (autonomous proposal, stages 0–1)
+
+The selected transport is MAVROS `MANUAL_CONTROL` with ArduSub `ALT_HOLD`.
+Commands come from onboard guidance. The existing mock `/cmd_vel` contract
+retains its SI units and never drives the hardware adapter.
+
+| Interface | Contract |
+| --- | --- |
+| `/vehicle/command` | `aterkia_interfaces/VehicleCommand`; source Header in FLU `base_link`; dimensionless `surge_input`, `yaw_input`, `heave_input`, each finite in `[-1,1]`; positive forward, counterclockwise yaw, up; reliable keep-last 1, volatile |
+| `/vehicle/depth_stamped` | `aterkia_interfaces/DepthStamped`; calibrated metres positive down; original pressure source Header; sensor-data QoS |
+| `/vehicle/set_mode` | Trigger; prepare the configured `ALT_HOLD` mode while disarmed; success requires a fresh observed mode after the MAVROS response |
+| `/vehicle/arm` | SetBool; autonomous adapter requires successful preparation, verified FCU configuration and fresh IMU/depth; accepted ACK plus fresh observed armed state opens one command session |
+| `/safety/abort` | Trigger; cancel preparation/session, send neutral once if active, request disarm; response confirms local cancellation, **not** physical stopping or confirmed disarm |
+
+The adapter starts disarmed and sends no pilot inputs until its own preparation
+and arming sequence succeeds. External arming does not authorize commands. The
+first command must arrive within `command_timeout`, just like subsequent commands.
+Source timestamps must increase, remain within the timeout, and not exceed ROS
+time by more than 50 ms. Receipt-time watchdogs use a monotonic clock. Conflicting
+publishers, invalid values/frames, telemetry loss, unexpected mode, disconnect,
+or timeout latch the session off. Reconnect and late service replies cannot
+reopen it. Starting again requires deliberate preparation while disarmed.
+
+The combined absolute input is limited to `input_limit` (initial software-test
+value 0.2). MAVROS sends `x=1000*surge`, `y=0`, `z=500+500*heave`,
+`r=-1000*yaw`; buttons and extensions remain zero. Neutral is `(0,0,500,0)`.
+This is neither a measured motor-power percentage nor a motor PWM command.
+ArduSub retains stabilization, vertical control, and the eight-thruster mixer.
+See [ArduSub pilot input semantics](https://ardupilot.org/sub/docs/pilot-control.html)
+and [MAVROS send mapping](https://github.com/mavlink/mavros/blob/ros2/mavros/src/plugins/manual_control.cpp).
+
+When a session ends, neutral is sent once and disarm is requested. A continuous
+neutral stream must not hide a dead guidance process from FCU pilot-input failsafe.
+Health reports `ARMED` at level OK only for the locally authorized session;
+`preflight_ready` separately describes readiness before arming. Disarm success
+requires fresh FCU state; loss of connection leaves the result unconfirmed.
+
+Control configuration is read-only after startup. Enabling the adapter requires
+an explicit ArduSub version, `ALT_HOLD`, calibrated water-pressure source, and
+arming enabled. The MAVROS parameter cache must confirm Vectored-6DoF frame 2,
+matching sender system ID, pilot-input failsafe action disarm (2), timeout >0 and
+<=2 s, and RC throttle failsafe disabled when that parameter exists. Old/new
+firmware aliases for sender/frame are accepted. These checks read parameters;
+they never configure the FCU. Physical calibration and wiring are separate checks.
+
+Telemetry-only and arming-only bench profiles keep their previous behavior and
+do not load the motion plugin. The [autonomous launch](autonomous.md) combines
+the adapter with onboard guidance and mission countdown. Enabling the adapter
+alone does not start a mission.
+
+## Onboard mission and guidance
+
+`auv.launch.py mode:=hardware` loads `autonomous.yaml` over the bench telemetry
+configuration. Countdown starts once, after mission configuration is loaded,
+using a monotonic clock. Failure/abort/completion does not restart it; service
+`/mission/start` cannot bypass it. `/navigation/ready` checks readiness in
+wayfinder itself before mode and arming requests. It requires fresh IMU/depth,
+verified vehicle preflight, and matched calibrated camera input when the plan
+contains `APPROACH_GATE`. The mock query requires armed odometry and camera input.
+
+| Hardware task | Feedback and completion |
+| --- | --- |
+| `DIVE_TO_DEPTH` | Positive-down stamped depth against the configured target; bounded P guidance with a deadband; tolerance sustained over at least three new samples and both source-time and monotonic settle windows |
+| `TURN` | Wrapped ENU IMU heading error, with continuous depth guidance; heading and depth must settle |
+| `APPROACH_GATE` | Exact-time calibrated detections; search/align/approach; surge stops at the near threshold, then waits for at least three new confirmation frames over the settle window |
+
+Hardware guidance never subscribes to mock odometry and never interprets SI
+`/cmd_vel` as input power. Terminal Action results cause mission disarm; final
+completion requires confirmed disarm. Command/telemetry/camera loss fails the
+task and latches the vehicle session. `PASS_GATE` remains rejected on hardware
+until independent crossing evidence is validated. Approach completion is not
+navigation/qualification completion and does not satisfy finals prerequisites.

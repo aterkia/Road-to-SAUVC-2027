@@ -10,7 +10,8 @@ inline void validate_prerequisites(const std::vector<std::string> &tasks) {
     throw std::invalid_argument("mission plan is empty");
   bool navigation = false, acquired = false, returned = false;
   for (const auto &task : tasks) {
-    if (task == "PASS_GATE" || task == "TURN" || task == "HOLD")
+    if (task == "PASS_GATE" || task == "TURN" || task == "HOLD" ||
+        task == "DIVE_TO_DEPTH" || task == "APPROACH_GATE")
       continue;
     if (task == "NAVIGATION") {
       navigation = true;
@@ -36,10 +37,12 @@ inline void validate_prerequisites(const std::vector<std::string> &tasks) {
   }
 }
 
-inline void require_supported_tasks(const std::vector<std::string> &tasks) {
+inline void require_supported_tasks(const std::vector<std::string> &tasks, bool hardware = false) {
   for (const auto &task : tasks)
-    if (task != "PASS_GATE" && task != "TURN" && task != "HOLD" && task != "NAVIGATION")
+    if (hardware ? task != "DIVE_TO_DEPTH" && task != "TURN" && task != "APPROACH_GATE" :
+        task != "PASS_GATE" && task != "TURN" && task != "HOLD" && task != "NAVIGATION")
       throw std::invalid_argument(
-          task + ": unavailable until payload/localization hardware and final rules are verified");
+          task + (hardware ? ": unavailable in the onboard hardware profile" :
+              ": unavailable until payload/localization hardware and final rules are verified"));
 }
 }  // namespace orchestrator

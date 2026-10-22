@@ -1,0 +1,16 @@
+# Override the existing ros2-docker/compose.yaml only after commissioning.
+services:
+  ros2:
+    working_dir: /home/${HOST_USER}/Dev/projects/Road-to-SAUVC-2027
+    command:
+      - bash
+      - -lc
+      - >-
+        source /opt/ros/lyrical/setup.bash &&
+        source install/setup.bash &&
+        source scripts/ros_env.sh &&
+        exec ros2 launch bootstrap auv.launch.py mode:=hardware
+    # A process crash must never restart the countdown and re-arm the AUV.
+    restart: "no"
+    stop_signal: SIGINT
+    stop_grace_period: 10s

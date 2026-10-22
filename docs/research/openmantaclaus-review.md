@@ -3,6 +3,9 @@
 Tanggal: 22 Oktober 2026. Status: **catatan riset dan usulan**, belum menjadi
 keputusan implementasi atau perubahan PRD.
 
+Pembacaan lanjutan yang khusus menelusuri sumber keputusan gerak, urutan misi,
+dan feedback tersedia di [alur misi autonomous](openmantaclaus-autonomous-mission-flow.md).
+
 Tindak lanjut terpisah: operator kemudian mengizinkan adaptasi gagasan 1 dan 2.
 Implementasinya dijelaskan di [kalibrasi kamera](../camera-calibration.md) dan
 [bench MAVROS](../mavros-bench.md), dengan hasil uji pada

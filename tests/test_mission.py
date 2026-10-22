@@ -17,7 +17,7 @@ from vision_msgs.msg import Detection2DArray
 
 from mock_scene import GateScene
 from ros_test import RosTest
-from test_recording import start_recording, finish_recording
+from test_recording import start_recording, finish_recording, read_bag
 
 
 class MissionTest(RosTest):
@@ -49,7 +49,7 @@ class MissionTest(RosTest):
         self.processes.append(
             subprocess.Popen(['ros2', 'launch', 'bootstrap', 'auv.launch.py', f'config:={path}'])
         )
-        self.wait(lambda: self.health and self.odom and self.detections and self.status)
+        self.wait(lambda: self.health and self.odom and self.detections and self.status, timeout=20)
 
     def authorize(self):
         self.assertTrue(self.call('/vehicle/arm', SetBool, SetBool.Request(data=True)).success)
@@ -57,6 +57,7 @@ class MissionTest(RosTest):
 
     def start_mission(self):
         self.authorize()
+        self.wait_navigation_ready()
         self.assertTrue(self.call('/mission/start', Trigger, Trigger.Request()).success)
 
     def test_qualification_pass_turn_return_with_evidence_and_bag(self):
@@ -123,11 +124,13 @@ class MissionTest(RosTest):
         self.assertTrue(any(m.status[0].message == 'ARMED' for m, _ in bag['/vehicle/health']))
         self.assertTrue(any(m.linear.x > 0 for m, _ in bag['/cmd_vel']))
         self.assertTrue(any(m.linear.x > 0 for m, _ in bag['/vehicle/applied_cmd']))
-        times = [t for _, t in bag['/cmd_vel']]
+        # Recorder discovery can delay receipt; watchdog production timing uses DDS source stamps.
+        sent_commands = read_bag(session / 'bag', ['/cmd_vel'], sent_time=True)
+        times = [t for _, t in sent_commands['/cmd_vel']]
         max_gap = max(b - a for a, b in zip(times, times[1:])) / 1e9
-        self.assertLess(max_gap, 0.4, 'recorded command gap exceeded mock watchdog budget')
+        self.assertLess(max_gap, 0.4, 'command source gap exceeded mock watchdog budget')
         print(
-            f'Qualification recording: {session}; max command receive gap={max_gap:.3f}s',
+            f'Qualification recording: {session}; max command source gap={max_gap:.3f}s',
             flush=True,
         )
 

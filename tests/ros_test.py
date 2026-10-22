@@ -2,12 +2,15 @@ import signal
 import subprocess
 import time
 import unittest
+import threading
 
 import rclpy
 from rclpy.action import ActionClient
 from aterkia_interfaces.action import NavigateTask
 from rcl_interfaces.srv import SetParameters
 from rclpy.parameter import Parameter as RosParameter
+from std_srvs.srv import Trigger
+from rclpy.executors import SingleThreadedExecutor
 
 
 class RosTest(unittest.TestCase):
@@ -38,6 +41,22 @@ class RosTest(unittest.TestCase):
         for name, value in parameters:
             command += ['-p', f'{name}:={value}']
         self.processes.append(subprocess.Popen(command))
+
+    def sensor_node(self, name):
+        # FCU telemetry must keep running while the test client waits for service responses.
+        node = rclpy.create_node(name)
+        executor = SingleThreadedExecutor()
+        executor.add_node(node)
+        thread = threading.Thread(target=executor.spin, daemon=True)
+        thread.start()
+
+        def cleanup():
+            executor.shutdown()
+            thread.join(timeout=5)
+            node.destroy_node()
+
+        self.addCleanup(cleanup)
+        return node
 
     def wait(self, predicate, timeout=5, message='condition not reached'):
         end = time.monotonic() + timeout
@@ -73,6 +92,23 @@ class RosTest(unittest.TestCase):
         result = future.result()
         self.node.destroy_client(client)
         return result
+
+    def wait_navigation_ready(self):
+        # Ask the consumer itself; seeing camera/health in this fixture is not a delivery barrier.
+        client = self.node.create_client(Trigger, '/navigation/ready')
+        self.wait(client.service_is_ready, timeout=20)
+        future = None
+
+        def ready():
+            nonlocal future
+            if future is not None and future.done() and future.result().success:
+                return True
+            if future is None or future.done():
+                future = client.call_async(Trigger.Request())
+            return False
+
+        self.wait(ready, timeout=20, message='guidance inputs not ready')
+        self.node.destroy_client(client)
 
     def parameter(self, node, name, value):
         response = self.call(

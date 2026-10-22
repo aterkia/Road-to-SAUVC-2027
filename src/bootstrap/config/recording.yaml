@@ -34,3 +34,18 @@ profiles:
       # Capture feedback if a future verified bridge publishes it; never enable a plugin here.
       - /mavros/rc/in
       - /mavros/rc/out
+  autonomous:
+    nodes: [/helm, /wayfinder, /spectra, /orchestrator, /mavros_node, /mavros, /mavros/param, /mavros/imu, /mavros/sys, /mavros/time]
+    topics:
+      - /vehicle/command
+      # Optional FCU output telemetry; recording never loads actuator plugins.
+      - /mavros/rc/out
+      - /vehicle/depth_stamped
+      - /vehicle/state
+      - /vehicle/imu
+      - /vehicle/pressure
+      - /mavros/state
+      - /mavros/imu/data
+      - /mavros/imu/static_pressure
+      - /mavros/statustext/recv
+      - /diagnostics

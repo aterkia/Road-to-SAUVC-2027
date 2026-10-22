@@ -1,0 +1,17 @@
+[Unit]
+Description=Aterkia onboard autonomous mission
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+# The container must already be created with compose.autonomous.yaml.
+ExecStart=/usr/bin/docker start --attach ros2-lyrical
+ExecStop=/usr/bin/docker stop --time 10 ros2-lyrical
+Restart=no
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

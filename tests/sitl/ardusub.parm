@@ -1,0 +1,23 @@
+# SITL ONLY. Never upload this file to a physical Pixhawk.
+# Explicit eight-thruster test frame and disarm on loss of onboard pilot input.
+FRAME_CONFIG 2
+MAV_GCS_SYSID 255
+FS_PILOT_INPUT 2
+FS_PILOT_TIMEOUT 1
+FS_GCS_ENABLE 0
+FS_THR_ENABLE 0
+# Simulation uses ideal sensors; physical pre-arm checks must remain enabled.
+ARMING_CHECK 0
+SIM_BARO_RND 0
+JS_GAIN_DEFAULT 1
+JS_GAIN_MIN 1
+JS_GAIN_MAX 1
+JS_THR_GAIN 1
+# Keep the test input above vertical stick deadzone; not a hardware calibration.
+THR_DZ 20
+RC3_TRIM 1500
+RC4_DZ 0
+SR0_EXT_STAT 10
+SR0_EXTRA1 20
+SR0_RAW_SENS 20
+SR0_RC_CHAN 10

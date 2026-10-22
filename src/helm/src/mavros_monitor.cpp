@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cmath>
 #include <optional>
+#include <vector>
 #include <rclcpp/rclcpp.hpp>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <geometry_msgs/msg/twist.hpp>
@@ -11,18 +12,19 @@
 #include <std_msgs/msg/float64.hpp>
 #include <std_srvs/srv/set_bool.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <mavros_msgs/srv/set_mode.hpp>
+#include <aterkia_interfaces/msg/depth_stamped.hpp>
+#include "vehicle_control.hpp"
 
 using Steady = std::chrono::steady_clock;
 
-// Telemetry monitor with optional, explicitly requested arm/disarm through MAVROS.
+// Vehicle telemetry and optional onboard control; bench profiles remain separate.
 class MavrosMonitor : public rclcpp::Node {
  public:
   MavrosMonitor() : Node("helm") {
     rcl_interfaces::msg::ParameterDescriptor fixed;
     fixed.read_only = true;
-    if (declare_parameter("control_enabled", false, fixed))
-      throw std::invalid_argument(
-          "hardware control is not commissioned; control_enabled must be false");
+    const bool control_enabled = declare_parameter("control_enabled", false, fixed);
     firmware_ = declare_parameter("firmware_family", "ardusub", fixed);
     version_ = declare_parameter("firmware_version", "unverified", fixed);
     mode_ = declare_parameter("control_mode", "", fixed);
@@ -43,6 +45,14 @@ class MavrosMonitor : public rclcpp::Node {
                 !std::isfinite(density_) || density_ <= 0)))
       throw std::invalid_argument(
           "invalid firmware/frame or uncalibrated pressure-to-depth configuration");
+    if (control_enabled) {
+      if (!arming_enabled_ || firmware_ != "ardusub" || version_ == "unverified" ||
+          mode_ != "ALT_HOLD" || !depth_enabled_ || frame_ != "base_link")
+        throw std::invalid_argument(
+            "onboard control requires ArduSub version, ALT_HOLD, calibrated depth and arming_enabled");
+      control_ = std::make_unique<VehicleControl>(*this);
+      mode_client_ = create_client<mavros_msgs::srv::SetMode>("/mavros/set_mode");
+    }
 
     health_pub_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
         "/vehicle/health", rclcpp::QoS(1).reliable());
@@ -55,6 +65,8 @@ class MavrosMonitor : public rclcpp::Node {
         create_publisher<std_msgs::msg::Float64>("/vehicle/heading", rclcpp::SensorDataQoS());
     depth_pub_ =
         create_publisher<std_msgs::msg::Float64>("/vehicle/depth", rclcpp::SensorDataQoS());
+    depth_stamped_pub_ = create_publisher<aterkia_interfaces::msg::DepthStamped>(
+        "/vehicle/depth_stamped", rclcpp::SensorDataQoS());
 
     const auto state_topic = declare_parameter("state_topic", "/mavros/state", fixed);
     const auto imu_topic = declare_parameter("imu_topic", "/mavros/imu/data", fixed);
@@ -110,8 +122,13 @@ class MavrosMonitor : public rclcpp::Node {
           if (depth_enabled_) {
             std_msgs::msg::Float64 depth;
             depth.data = (msg->fluid_pressure - surface_pressure_) / (density_ * gravity_);
-            if (std::isfinite(depth.data))
+            if (std::isfinite(depth.data)) {
               depth_pub_->publish(depth);
+              aterkia_interfaces::msg::DepthStamped stamped;
+              stamped.header = msg->header;
+              stamped.depth_m = depth.data;
+              depth_stamped_pub_->publish(stamped);
+            }
           }
         });
 
@@ -123,18 +140,22 @@ class MavrosMonitor : public rclcpp::Node {
         });
 
     mode_service_ = create_service<std_srvs::srv::Trigger>("/vehicle/set_mode",
-        [](std_srvs::srv::Trigger::Request::SharedPtr,
-            std_srvs::srv::Trigger::Response::SharedPtr res) {
-          res->success = false;
-          res->message = "READ_ONLY: mode changes are not commissioned";
+        [this](std::shared_ptr<rmw_request_id_t> header,
+            std_srvs::srv::Trigger::Request::SharedPtr) {
+          request_mode(header);
         });
 
     abort_ = create_service<std_srvs::srv::Trigger>("/safety/abort",
-        [](std_srvs::srv::Trigger::Request::SharedPtr,
+        [this](std_srvs::srv::Trigger::Request::SharedPtr,
             std_srvs::srv::Trigger::Response::SharedPtr res) {
           res->success = false;
           res->message =
               "Motion abort is unavailable; use independent vehicle safety or explicit disarm";
+          if (control_) {
+            stop_control("ABORTED");
+            res->success = true;
+            res->message = "Command session cancelled; disarm requested, check FCU state for confirmation";
+          }
         });
 
     command_sub_ = create_subscription<geometry_msgs::msg::Twist>(
@@ -143,12 +164,25 @@ class MavrosMonitor : public rclcpp::Node {
               get_logger(), *get_clock(), 2000, "READ_ONLY: motion command rejected");
         });
 
-    timer_ = create_wall_timer(std::chrono::milliseconds(100), [this] {
+    timer_ = create_wall_timer(std::chrono::milliseconds(50), [this] {
       check_arm();
+      check_mode();
+      if (control_) {
+        control_->tick(connected(), sensors_fresh(), state_.mode == mode_, state_.armed);
+        if (session_active_ && !control_->authorized())
+          stop_control(control_->reason());
+        if (!state_.armed)
+          disarm_attempted_ = false;
+        if (must_disarm_ && connected() && state_.armed && !pending_arm_ && !disarm_attempted_) {
+          disarm_attempted_ = true;
+          request_arm(nullptr, false);
+        }
+      }
       health();
     });
     RCLCPP_INFO(
-        get_logger(), "%s; mode/motion transmission unavailable",
+        get_logger(), "%s",
+        control_ ? "Onboard ALT_HOLD control enabled; awaiting mission preparation" :
         arming_enabled_ ? "ARMING_ONLY: explicit arm/disarm enabled" : "READ_ONLY MAVROS telemetry");
   }
 
@@ -164,21 +198,126 @@ class MavrosMonitor : public rclcpp::Node {
     Steady::time_point started;
     int64_t request_id{0};
     bool accepted{false};
+    uint64_t generation{0};
   };
+
+  struct PendingMode {
+    std::shared_ptr<rmw_request_id_t> header;
+    Steady::time_point started;
+    int64_t request_id{0};
+    bool sent{false};
+    uint64_t generation{0};
+  };
+
+  bool sensors_fresh() const {
+    return fresh(imu_sample_, sensor_timeout_) && depth_enabled_ &&
+        fresh(pressure_sample_, sensor_timeout_);
+  }
+
+  void stop_control(const std::string &reason) {
+    control_->stop(reason);
+    prepared_ = false;
+    session_active_ = false;
+    must_disarm_ = true;
+    if (pending_mode_)
+      finish_mode(false, "Mode preparation cancelled");
+    if (pending_arm_ && pending_arm_->target)
+      finish_arm(false, "Arming authorization cancelled; disarm required");
+  }
+
+  void mode_response(const std::shared_ptr<rmw_request_id_t> &header,
+      bool success, const std::string &message) {
+    std_srvs::srv::Trigger::Response response;
+    response.success = success;
+    response.message = message;
+    mode_service_->send_response(*header, response);
+  }
+
+  void finish_mode(bool success, const std::string &message) {
+    auto header = pending_mode_->header;
+    prepared_ = success;
+    mode_client_->remove_pending_request(pending_mode_->request_id);
+    pending_mode_.reset();
+    mode_response(header, success, message);
+  }
+
+  void request_mode(const std::shared_ptr<rmw_request_id_t> &header) {
+    if (!control_ || !connected() || !sensors_fresh() || !control_->configured() ||
+        state_.armed || pending_mode_ || pending_arm_) {
+      mode_response(header, false,
+          "Preparation requires verified control configuration, fresh sensors, disarmed FCU and no pending request");
+      return;
+    }
+    if (!mode_client_->service_is_ready()) {
+      mode_response(header, false, "MAVROS mode service is unavailable");
+      return;
+    }
+    control_->stop("PREPARING");
+    prepared_ = false;
+    must_disarm_ = false;
+    pending_mode_ = PendingMode{header, Steady::now()};
+    pending_mode_->generation = control_->generation();
+    auto request = std::make_shared<mavros_msgs::srv::SetMode::Request>();
+    request->custom_mode = mode_;
+    auto future = mode_client_->async_send_request(request,
+        [this, header](rclcpp::Client<mavros_msgs::srv::SetMode>::SharedFuture reply) {
+          if (!pending_mode_ || pending_mode_->header != header)
+            return;
+          if (!reply.get()->mode_sent)
+            finish_mode(false, "MAVROS rejected mode request");
+          else
+            pending_mode_->sent = true;
+        });
+    pending_mode_->request_id = future.request_id;
+  }
+
+  void check_mode() {
+    if (!pending_mode_)
+      return;
+    if (!connected() || !sensors_fresh() || !control_->configured() || state_.armed ||
+        pending_mode_->generation != control_->generation())
+      finish_mode(false, "Mode preparation interrupted");
+    else if (std::chrono::duration<double>(Steady::now() - pending_mode_->started).count() >= arm_timeout_)
+      finish_mode(false, "Timeout: mode change unconfirmed; inspect FCU state");
+    else if (pending_mode_->sent && state_.mode == mode_ && state_sample_.received > pending_mode_->started)
+      finish_mode(true, "ALT_HOLD confirmed by FCU state");
+  }
 
   void arm_response(const std::shared_ptr<rmw_request_id_t> &header,
       bool success, const std::string &message) {
     std_srvs::srv::SetBool::Response response;
     response.success = success;
     response.message = message;
-    arm_->send_response(*header, response);
+    if (header)
+      arm_->send_response(*header, response);
+    else
+      RCLCPP_WARN(get_logger(), "Safety disarm: %s", message.c_str());
   }
 
   void finish_arm(bool success, const std::string &message) {
+    if (control_ && pending_arm_->target) {
+      if (success && prepared_ && pending_arm_->generation == control_->generation() &&
+          sensors_fresh() && state_.mode == mode_ && control_->configured()) {
+        control_->authorize();
+        session_active_ = true;
+        prepared_ = false;
+      } else {
+        success = false;
+        control_->stop("ARMING_FAILED");
+        prepared_ = false;
+        must_disarm_ = true;
+      }
+    }
     auto header = pending_arm_->header;
+    const bool disarming = !pending_arm_->target;
     arming_client_->remove_pending_request(pending_arm_->request_id);
     pending_arm_.reset();
     arm_response(header, success, message);
+    if (disarming) {
+      for (const auto &waiter : disarm_waiters_)
+        arm_response(waiter, success, message);
+      disarm_waiters_.clear();
+    }
   }
 
   void request_arm(const std::shared_ptr<rmw_request_id_t> &header, bool target) {
@@ -186,8 +325,21 @@ class MavrosMonitor : public rclcpp::Node {
       arm_response(header, false, "READ_ONLY: launch arming.launch.py to enable explicit arm/disarm");
       return;
     }
-    if (pending_arm_) {
+    const bool cancelled_arm = !target && control_ && pending_arm_ && pending_arm_->target;
+    if (!target && control_ && header)
+      stop_control("DISARM_REQUESTED");
+    // Mission shutdown may join a safety disarm already awaiting FCU confirmation.
+    if (!target && control_ && pending_arm_ && !pending_arm_->target && header) {
+      disarm_waiters_.push_back(header);
+      return;
+    }
+    if (pending_arm_ || pending_mode_) {
       arm_response(header, false, "Another arm/disarm request is pending");
+      return;
+    }
+    if (target && control_ && (!prepared_ || state_.armed || state_.mode != mode_ ||
+        !sensors_fresh() || !control_->configured() || must_disarm_)) {
+      arm_response(header, false, "Mission preparation with fresh sensors and ALT_HOLD is required before arming");
       return;
     }
     if (!connected()) {
@@ -195,6 +347,10 @@ class MavrosMonitor : public rclcpp::Node {
       return;
     }
     if (state_.armed == target) {
+      if (cancelled_arm) {
+        arm_response(header, false, "Previous arming outcome unconfirmed; command session cancelled and safety disarm pending");
+        return;
+      }
       arm_response(header, true, target ? "Already armed" : "Already disarmed");
       return;
     }
@@ -208,6 +364,7 @@ class MavrosMonitor : public rclcpp::Node {
       return;
     }
     pending_arm_ = PendingArm{header, target, Steady::now()};
+    pending_arm_->generation = control_ ? control_->generation() : 0;
     auto request = std::make_shared<mavros_msgs::srv::CommandBool::Request>();
     request->value = target;
     auto future = arming_client_->async_send_request(request,
@@ -228,6 +385,12 @@ class MavrosMonitor : public rclcpp::Node {
   void check_arm() {
     if (!pending_arm_)
       return;
+    if (control_ && pending_arm_->target &&
+        (!sensors_fresh() || state_.mode != mode_ || !control_->configured() ||
+            pending_arm_->generation != control_->generation())) {
+      finish_arm(false, "Arming preparation invalidated; outcome unconfirmed");
+      return;
+    }
     if (!connected()) {
       finish_arm(false, "DISCONNECTED: arm/disarm outcome is unconfirmed; inspect FCU state");
     } else if (std::chrono::duration<double>(Steady::now() - pending_arm_->started).count() >=
@@ -279,19 +442,27 @@ class MavrosMonitor : public rclcpp::Node {
     status.hardware_id = firmware_ + ":" + version_;
     const bool imu_ok = connected() && fresh(imu_sample_, sensor_timeout_);
     const bool pressure_ok = connected() && fresh(pressure_sample_, sensor_timeout_);
-    status.level =
-        connected() ? 1 : 2;  // Never authorize autonomy, even if the FCU is armed externally.
+    status.level = connected() ? 1 : 2;
     status.message =
         !connected() ? "DISCONNECTED" :
         !imu_ok || (depth_enabled_ && !pressure_ok) ? "TELEMETRY_STALE" :
+        control_ ? (control_->authorized() ? "ARMED" : control_->reason()) :
         arming_enabled_ ? "ARMING_ONLY" : "READ_ONLY";
+    if (control_ && control_->authorized() && connected() && sensors_fresh() && state_.mode == mode_)
+      status.level = 0;
     auto field = [&status](const std::string &key, const std::string &value) {
       diagnostic_msgs::msg::KeyValue kv;
       kv.key = key;
       kv.value = value;
       status.values.push_back(kv);
     };
-    field("control_enabled", "false");
+    field("control_enabled", control_ ? "true" : "false");
+    field("motion_authorized", control_ && control_->authorized() ? "true" : "false");
+    field("preflight_ready", control_ && connected() && sensors_fresh() &&
+        control_->configured() && !state_.armed && !pending_arm_ && !pending_mode_ ? "true" : "false");
+    field("fcu_control_config_verified", control_ && control_->configured() ? "true" : "false");
+    if (control_)
+      field("fcu_control_config_error", control_->configuration_error());
     field("arming_enabled", arming_enabled_ ? "true" : "false");
     field("arming_service_ready", arming_client_ && arming_client_->service_is_ready() ? "true" : "false");
     field("configured_mode", mode_);
@@ -313,7 +484,12 @@ class MavrosMonitor : public rclcpp::Node {
   double state_timeout_, sensor_timeout_, surface_pressure_, density_, gravity_, arm_timeout_;
   bool depth_enabled_, arming_enabled_;
   std::optional<PendingArm> pending_arm_;
+  std::vector<std::shared_ptr<rmw_request_id_t>> disarm_waiters_;
+  std::optional<PendingMode> pending_mode_;
+  std::unique_ptr<VehicleControl> control_;
+  bool prepared_{false}, session_active_{false}, must_disarm_{false}, disarm_attempted_{false};
   rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
+  rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr mode_client_;
   Sample state_sample_, imu_sample_, pressure_sample_;
   mavros_msgs::msg::State state_;
 
@@ -322,6 +498,7 @@ class MavrosMonitor : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
   rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr pressure_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr heading_pub_, depth_pub_;
+  rclcpp::Publisher<aterkia_interfaces::msg::DepthStamped>::SharedPtr depth_stamped_pub_;
   rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
   rclcpp::Subscription<sensor_msgs::msg::FluidPressure>::SharedPtr pressure_sub_;

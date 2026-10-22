@@ -197,7 +197,9 @@ class BenchTest(RosTest):
         self.armed = True
         self.sent = 0
         self.timer = self.node.create_timer(0.05, self.publish)
-        self.wait(lambda: self.health and self.states and self.heading and self.pressures)
+        self.wait(lambda: self.health and self.states and self.heading and self.pressures
+                  and self.imus and self.fields()['imu_fresh'] == 'true'
+                  and self.fields()['pressure_fresh'] == 'true')
 
     def publish(self):
         stamp = self.node.get_clock().now().to_msg()
@@ -271,7 +273,10 @@ class BenchTest(RosTest):
     def test_invalid_sensors_and_missing_heartbeat_expire(self):
         self.start_monitor(depth=True)
         self.bad = True
-        self.wait(lambda: self.health[-1].status[0].message == 'TELEMETRY_STALE')
+        # IMU and pressure arrive on separate DDS readers and expire independently.
+        self.wait(lambda: self.health[-1].status[0].message == 'TELEMETRY_STALE'
+                  and self.fields()['imu_fresh'] == 'false'
+                  and self.fields()['pressure_fresh'] == 'false')
         self.assertEqual(self.fields()['imu_fresh'], 'false')
         self.assertEqual(self.fields()['pressure_fresh'], 'false')
         imu_count, depth_count = len(self.imus), len(self.depth)

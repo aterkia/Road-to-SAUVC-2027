@@ -67,9 +67,10 @@ class VisionTest(RosTest):
             camera.publish(msg)
 
         timer = self.node.create_timer(0.05, publish)
-        self.wait(lambda: detections and health)
+        self.wait(lambda: detections and health, timeout=20)
         self.assertTrue(self.call('/vehicle/arm', SetBool, SetBool.Request(data=True)).success)
         self.wait_armed_delivery(health)
+        self.wait_navigation_ready()
         self.assertTrue(self.goal('PASS_GATE').accepted)
         self.wait(lambda: output and output[-1].angular.z > 0)
         frame[0] = gate_image(center=450)

@@ -117,9 +117,14 @@ be supplied explicitly.
 
 [MAVROS bench](docs/mavros-bench.md) covers dependencies, configurable serial/UDP
 connections and validated telemetry. The separate [arming launch](docs/arming.md)
-adds explicit arm/disarm requests with FCU state confirmation. Mode changes and
-motion transmission remain locked. The telemetry bench
+adds explicit arm/disarm requests with FCU state confirmation. These bench
+profiles keep mode changes and motion disabled. The telemetry bench
 never launches mission/guidance or fabricates horizontal odometry.
+
+The [onboard autonomous profile](docs/autonomous.md) runs countdown, preflight,
+ALT_HOLD/arming, measured depth/turn tasks, and calibrated visual approach.
+[Verification evidence](docs/autonomous-verification.md) separates ROS/SITL
+results from physical commissioning. Hardware gate crossing remains unavailable.
 
 The serial endpoint defaults to `serial:///dev/ttyACM0:115200` in
 `src/bootstrap/config/bench.yaml`. Adjust it once for the actual device and rebuild

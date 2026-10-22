@@ -18,7 +18,8 @@ class VehicleTest(RosTest):
         self.odom = self.observe('/vehicle/odometry', Odometry, qos_profile_sensor_data)
         self.pub = self.node.create_publisher(Twist, '/cmd_vel', 1)
         self.start('helm')
-        self.wait(lambda: self.output and self.odom and self.pub.get_subscription_count())
+        self.wait(lambda: self.output and self.odom and self.health
+                  and self.pub.get_subscription_count())
 
     def arm(self):
         self.assertTrue(self.call('/vehicle/arm', SetBool, SetBool.Request(data=True)).success)

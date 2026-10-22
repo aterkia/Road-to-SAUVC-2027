@@ -1,0 +1,47 @@
+# Onboard mission. Endpoint and telemetry defaults are inherited from bench.yaml.
+# Complete firmware/depth commissioning here before selecting mode:=hardware.
+bootstrap:
+  ros__parameters:
+    camera_launch_file: ""  # Python driver launch on the companion, once selected.
+helm:
+  ros__parameters:
+    firmware_version: unverified
+    control_mode: ALT_HOLD
+    source_system: 255
+    pressure_is_depth_sensor: false
+    surface_pressure_pa: 0.0
+    water_density_kg_m3: 0.0
+    command_timeout: 0.5
+    input_limit: 0.2
+wayfinder:
+  ros__parameters:
+    vehicle_mode: hardware
+    sensor_timeout: 0.5
+    target_depth_m: 1.0
+    depth_tolerance_m: 0.1
+    depth_abort_error_m: 0.5
+    depth_gain: 0.5
+    heave_input_limit: 0.2
+    yaw_input_limit: 0.2
+    yaw_input_gain: 0.5
+    turn_tolerance: 0.05
+    settle_time_s: 0.5
+    use_camera_info: true
+    surge_input: 0.1
+    search_yaw_input: 0.1
+    bearing_input_gain: 0.5
+    near_width_ratio: 0.55
+spectra:
+  ros__parameters:
+    # APPROACH_GATE requires raw/rectified geometry with physical calibration.
+    input_geometry: uncalibrated
+    calibration_file: ""
+orchestrator:
+  ros__parameters:
+    vehicle_mode: hardware
+    start_delay_s: 30.0
+    preparation_timeout_s: 8.0
+    tasks: [DIVE_TO_DEPTH, TURN]
+    task_timeout: 60.0
+    health_timeout: 0.5
+    turn_angle: 3.141592653589793

@@ -25,7 +25,7 @@ from ros_test import RosTest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def read_bag(path, topics=None):
+def read_bag(path, topics=None, sent_time=False):
     reader = rosbag2_py.SequentialReader()
     reader.open(
         rosbag2_py.StorageOptions(uri=str(path), storage_id='mcap'),
@@ -36,8 +36,11 @@ def read_bag(path, topics=None):
         reader.set_filter(rosbag2_py.StorageFilter(topics=topics))
     messages = {}
     while reader.has_next():
-        topic, data, received, _sent = reader.read_next_ext()
-        messages.setdefault(topic, []).append((deserialize_message(data, types[topic]), received))
+        topic, data, received, sent = reader.read_next_ext()
+        if sent_time:
+            assert sent > 0, f'DDS source timestamp unavailable for {topic}'
+        messages.setdefault(topic, []).append(
+            (deserialize_message(data, types[topic]), sent if sent_time else received))
     return messages
 
 

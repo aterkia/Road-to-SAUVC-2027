@@ -137,9 +137,11 @@ atau depth konstan mock. Kalibrasi tersebut belum tersedia untuk kendaraan nyata
   atau men-disarm perangkat yang belum dapat dikendalikan adapter ini.
 
 Pada profil bench bawaan, monitor tidak membuat client/publisher MAVROS command.
-`control_enabled: true` menggagalkan startup; parameter tidak dapat diubah saat
-runtime. Mengisi mode atau
-versi firmware tidak membuka kendali. `auv.launch.py mode:=hardware` tetap ditolak.
+Mengaktifkan `control_enabled` pada konfigurasi bench yang belum dikalibrasi
+menggagalkan startup; parameter tidak dapat diubah saat runtime. Mengisi mode
+atau versi firmware saja tidak membuka kendali. Adapter autonomous memiliki
+syarat tersendiri pada [kontrak interface](interfaces.md#onboard-ardusub-adapter-autonomous-proposal-stages-01).
+`auv.launch.py mode:=hardware` tetap ditolak sampai integrasi misi tersedia.
 Untuk perangkat yang armed oleh sistem lain, penghentian tetap melalui sarana
 independen kendaraan yang sudah tersedia.
 

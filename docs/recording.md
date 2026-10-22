@@ -31,13 +31,18 @@ The tool also reads live ROS parameters, so launch argument overrides such as
 is reported as an unavailable snapshot after a shared five-second deadline;
 it does not prevent recording the sources that are available.
 
-`src/bootstrap/config/recording.yaml` defines two explicit capture profiles:
+`src/bootstrap/config/recording.yaml` defines three explicit capture profiles:
 
 | Capture | Sources |
 | --- | --- |
-| Both | Camera/CameraInfo, detections/paired CameraInfo, pre-adapter `/cmd_vel`, health, depth, heading, mission/navigation status, navigation Action feedback/status, parameter events and ROS logs |
+| Common | Camera/CameraInfo, detections/paired CameraInfo, pre-adapter `/cmd_vel` if present, health, depth, heading, mission/navigation status, navigation Action feedback/status, parameter events and ROS logs |
 | Mock | Ground-truth odometry and `/vehicle/applied_cmd` |
 | Bench | Normalized and raw MAVROS state, IMU, pressure, plus battery, status text, diagnostics and RC feedback if published |
+| Autonomous | Stamped vehicle command/depth, state, IMU, pressure, raw MAVROS telemetry, status text, diagnostics and optional FCU RC output; parameters of mission/guidance/adapter and MAVROS parameter cache |
+
+Use `--profile autonomous --config src/bootstrap/config/autonomous.yaml` for the
+[onboard mission](autonomous.md), with the usual output/duration options. FCU RC
+output is an autopilot demand, not measured thruster motion or passage evidence.
 
 Bench raw state/IMU/pressure topic overrides are added from live helm parameters.
 Use `--topic /additional_sensor` for another source, or `--recording-config` for
