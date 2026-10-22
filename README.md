@@ -116,8 +116,9 @@ Default mock guidance remains uncalibrated; measured hardware intrinsics must
 be supplied explicitly.
 
 [MAVROS bench](docs/mavros-bench.md) covers dependencies, configurable serial/UDP
-connections and validated telemetry. Arming, disarming, mode changes and motion
-transmission are locked until hardware configuration is commissioned. The bench
+connections and validated telemetry. The separate [arming launch](docs/arming.md)
+adds explicit arm/disarm requests with FCU state confirmation. Mode changes and
+motion transmission remain locked. The telemetry bench
 never launches mission/guidance or fabricates horizontal odometry.
 
 The serial endpoint defaults to `serial:///dev/ttyACM0:115200` in

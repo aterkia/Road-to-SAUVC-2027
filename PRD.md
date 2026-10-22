@@ -301,6 +301,13 @@ Pengujian kolam harus memakai standar kelulusan kuantitatif (misalnya tingkat ke
 7. Urutan dan prasyarat misi berdasarkan **rulebook SAUVC 2027 final**.
 8. Target uji kuantitatif (akurasi deteksi, latensi kontrol, success rate) berdasarkan hasil benchmark.
 
+Keputusan hardware yang sudah dikonfirmasi operator: Pixhawk dengan ArduSub,
+sensor depth, dan delapan thruster dengan susunan Vectored-6DoF sesuai gambar
+operator. Stabilisasi dan pencampuran output motor menggunakan kemampuan ArduSub.
+Pemetaan gambar dicatat di `docs/hardware-and-finals.md`; wiring dan arah motor
+tetap memerlukan verifikasi fisik. Arming/disarming dapat diimplementasikan serta
+diuji terpisah dari kendali gerak. Mekanisme payload dan sensor tambahan belum ada.
+
 ## 14. Prinsip Pengambilan Keputusan Teknis
 
 - Pilih solusi **paling sederhana yang bisa diuji** untuk kebutuhan saat ini.

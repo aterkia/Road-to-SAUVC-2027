@@ -30,6 +30,8 @@ helm:
     firmware_version: unverified
     control_mode: ""
     control_enabled: false  # true is rejected; no actuator transport exists yet.
+    arming_enabled: false  # arming.launch.py overrides this; startup never arms.
+    arming_timeout: 6.0  # Includes the MAVROS command ACK wait and state confirmation.
     state_topic: /mavros/state
     imu_topic: /mavros/imu/data
     pressure_topic: /mavros/imu/static_pressure

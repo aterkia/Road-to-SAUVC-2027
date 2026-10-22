@@ -6,7 +6,9 @@ gunakan profil bench pada [panduan rekaman sesi](recording.md).
 Adaptasi gagasan 2 dari [riset](research/openmantaclaus-review.md), sesuai
 keputusan operator: versi firmware, endpoint dan mode kendali belum final.
 `helm_mavros_monitor` menyediakan pembacaan telemetry dan kontrak command yang
-terkunci. `bench.launch.py` hanya menjalankan MAVROS dan monitor `helm`.
+terkunci secara bawaan. `bench.launch.py` hanya menjalankan MAVROS dan monitor
+`helm`. Gunakan [arming.launch.py](arming.md) untuk mengaktifkan permintaan
+arming/disarming dengan konfirmasi state; gerakan tetap belum diaktifkan.
 
 ## Dependency dan launch
 
@@ -126,7 +128,7 @@ di permukaan, `water_density_kg_m3` sesuai air pengujian, lalu aktifkan
 dipotong agar bias permukaan terlihat. Tidak ada asumsi datum dari altitude MSL
 atau depth konstan mock. Kalibrasi tersebut belum tersedia untuk kendaraan nyata.
 
-## Interface kendali yang disiapkan
+## Interface pada profil bench read-only
 
 - `/vehicle/arm` (`SetBool`): baik arm maupun disarm mengembalikan `success=false`.
 - `/vehicle/set_mode` (`Trigger`): menolak perubahan mode; `control_mode` belum dieksekusi.
@@ -134,8 +136,9 @@ atau depth konstan mock. Kalibrasi tersebut belum tersedia untuk kendaraan nyata
 - `/safety/abort` (`Trigger`): `success=false`; tidak mengaku berhasil menghentikan
   atau men-disarm perangkat yang belum dapat dikendalikan adapter ini.
 
-Tidak ada client/publisher MAVROS command dalam monitor. `control_enabled: true`
-menggagalkan startup; parameter tidak dapat diubah saat runtime. Mengisi mode atau
+Pada profil bench bawaan, monitor tidak membuat client/publisher MAVROS command.
+`control_enabled: true` menggagalkan startup; parameter tidak dapat diubah saat
+runtime. Mengisi mode atau
 versi firmware tidak membuka kendali. `auv.launch.py mode:=hardware` tetap ditolak.
 Untuk perangkat yang armed oleh sistem lain, penghentian tetap melalui sarana
 independen kendaraan yang sudah tersedia.

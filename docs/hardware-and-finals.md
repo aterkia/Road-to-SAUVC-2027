@@ -1,7 +1,8 @@
 # Hardware handoff and M4 limits
 
-Confirmed by the operator: Pixhawk with ArduSub, a depth sensor, no additional
-sensor or ball-drop/pickup hardware. PRD section 13 remains the decision register;
+Confirmed by the operator: Pixhawk with ArduSub, a depth sensor, eight thrusters
+in the Vectored-6DoF layout shown by the operator, no additional sensor or
+ball-drop/pickup hardware. PRD section 13 remains the decision register;
 this implementation does not change the competition requirement baseline.
 
 ## Available now
@@ -37,10 +38,29 @@ acceptance gate without these decisions and measured results.
 
 ## Pixhawk / ArduSub integration gate
 
+The operator's top-view diagram matches the built-in
+[Vectored-6DoF frame](https://ardupilot.org/sub/docs/sub-frames.html):
+
+| Motor numbers | Placement (forward is the diagram's arrow) | Role |
+| --- | --- | --- |
+| 1, 2 | Front right, front left | Angled horizontal thrust |
+| 3, 4 | Rear right, rear left | Angled horizontal thrust |
+| 5, 6 | Front right, front left | Vertical thrust |
+| 7, 8 | Rear right, rear left | Vertical thrust |
+
+Use ArduSub's existing motor mixer for this layout. The diagram records intended
+motor numbering, not measured wiring or motor reversal. ROS must not implement a
+second mixer or assume that physical output channels have been checked. This
+update does not write FCU frame, motor direction or output parameters.
+
+The [arming launch](arming.md) now provides explicit arm/disarm with MAVROS ACK
+and state confirmation. It does not enable movement or autonomous missions.
+
 The [telemetry-only MAVROS bench](mavros-bench.md) now provides connection,
 state, IMU/heading and pressure observation. Pressure-derived depth is opt-in
 after sensor identity and surface calibration are verified. Endpoint, firmware
-metadata and intended mode are parameters. All actuator interfaces remain locked;
+metadata and intended mode are parameters. The default bench remains read-only;
+explicit arming is available in its separate launch. Motion interfaces remain locked;
 software/UDP tests do not close the hardware commissioning gates below.
 
 1. Select and pin the MAVROS/ArduSub integration, firmware version and vehicle

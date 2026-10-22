@@ -166,7 +166,47 @@ The hardware acceptance gates remain pending.
 
 ## Confirmed hardware (22 October 2026)
 
-Pixhawk with ArduSub and a depth sensor. No additional sensor or ball-drop/pickup
+Pixhawk with ArduSub, a depth sensor, and eight thrusters in the operator's
+Vectored-6DoF layout (see [motor numbering](hardware-and-finals.md)).
+No additional sensor or ball-drop/pickup
 hardware is available. A measured horizontal displacement source and gate-crossing
 criterion remain unverified on hardware. Mock odometry is simulation ground truth,
 not an estimate derived from the available depth sensor.
+
+## Explicit arming/disarming (22 October 2026)
+
+`bootstrap arming.launch.py` enables `/vehicle/arm` through the MAVROS command
+plugin. The existing telemetry bench remains read-only. Success requires a
+positive MAVROS result and fresh FCU state matching the requested arm/disarm.
+There is no startup arming, force-arm, automatic retry or rearm on reconnection.
+Timeouts/disconnect report an unconfirmed outcome, not a successful cancellation.
+Motion, mode changes and hardware mission execution remain unavailable.
+See [usage and limitations](arming.md).
+
+Eight new system tests cover explicit requests and state confirmation, FCU
+rejection, ACK without state change, unavailable service, missing/late ACK,
+stale IMU with disarm still allowed, disconnect, overlapping requests, and the
+real MAVROS transport. The loopback peer verifies command 400 with normal
+arm/disarm values and force value zero; motion/RC packets remain absent while
+`/cmd_vel` is published. This peer is not ArduSub SITL or a dynamics simulation.
+
+All 6 packages built in the isolated validation container. Final full verification
+passed 49 system tests, 4 C++ unit tests and 6 Python package tests (59 actual
+cases). Colcon reports 55 results including the CTest wrappers. Evidence:
+`artifacts/arming-build.log` and `artifacts/arming-final-verification.log`.
+`helm` and `bootstrap` were then rebuilt in the operator's `ros2-lyrical`
+workspace, and the installed arming launch was checked with `--show-args`;
+see `artifacts/arming-workspace-build.log`. No hardware arming command was sent.
+
+The recording fixture now waits for the IMU subscription and records a sustained
+sensor stream before disconnecting the peer; discovering a DDS endpoint alone
+does not establish that its TCP data stream has started. Two existing mock
+guidance/vision tests failed in an intermediate run, passed separately, and passed
+in the final full run; their production code and acceptance checks were unchanged.
+Intermediate failures are retained in `artifacts/arming-targeted-tests.log`,
+`artifacts/arming-targeted-recheck.log`, `artifacts/arming-full-verification.log`
+and `artifacts/arming-full-recheck.log`.
+
+Real Pixhawk arming/disarming and physical thruster output have not been tested.
+The diagram is a confirmed intended layout; wiring and motor directions still
+need physical verification. No autopilot frame/output parameters were changed.

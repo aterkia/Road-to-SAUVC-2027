@@ -1,9 +1,11 @@
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <mavros_msgs/msg/state.hpp>
+#include <mavros_msgs/srv/command_bool.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/fluid_pressure.hpp>
 #include <std_msgs/msg/float64.hpp>
@@ -12,7 +14,7 @@
 
 using Steady = std::chrono::steady_clock;
 
-// Bench telemetry only. This executable has no MAVROS command publishers/clients.
+// Telemetry monitor with optional, explicitly requested arm/disarm through MAVROS.
 class MavrosMonitor : public rclcpp::Node {
  public:
   MavrosMonitor() : Node("helm") {
@@ -27,6 +29,10 @@ class MavrosMonitor : public rclcpp::Node {
     frame_ = declare_parameter("imu_frame", "base_link", fixed);
     state_timeout_ = positive("state_timeout", 3.0, fixed);
     sensor_timeout_ = positive("telemetry_timeout", 0.5, fixed);
+    arming_enabled_ = declare_parameter("arming_enabled", false, fixed);
+    arm_timeout_ = positive("arming_timeout", 6.0, fixed);
+    if (arming_enabled_)
+      arming_client_ = create_client<mavros_msgs::srv::CommandBool>("/mavros/cmd/arming");
     depth_enabled_ = declare_parameter("pressure_is_depth_sensor", false, fixed);
     surface_pressure_ = declare_parameter("surface_pressure_pa", 0.0, fixed);
     density_ = declare_parameter("water_density_kg_m3", 0.0, fixed);
@@ -109,12 +115,11 @@ class MavrosMonitor : public rclcpp::Node {
           }
         });
 
-    // Keep control requests fail-closed while only telemetry is commissioned.
+    // Defer the response so telemetry continues while waiting for the FCU.
     arm_ = create_service<std_srvs::srv::SetBool>("/vehicle/arm",
-        [](std_srvs::srv::SetBool::Request::SharedPtr,
-            std_srvs::srv::SetBool::Response::SharedPtr res) {
-          res->success = false;
-          res->message = "READ_ONLY: arming/disarming hardware is not commissioned";
+        [this](std::shared_ptr<rmw_request_id_t> header,
+            std_srvs::srv::SetBool::Request::SharedPtr req) {
+          request_arm(header, req->data);
         });
 
     mode_service_ = create_service<std_srvs::srv::Trigger>("/vehicle/set_mode",
@@ -129,7 +134,7 @@ class MavrosMonitor : public rclcpp::Node {
             std_srvs::srv::Trigger::Response::SharedPtr res) {
           res->success = false;
           res->message =
-              "READ_ONLY: no actuator commands sent; cannot confirm stop/disarm; use independent vehicle safety";
+              "Motion abort is unavailable; use independent vehicle safety or explicit disarm";
         });
 
     command_sub_ = create_subscription<geometry_msgs::msg::Twist>(
@@ -139,10 +144,12 @@ class MavrosMonitor : public rclcpp::Node {
         });
 
     timer_ = create_wall_timer(std::chrono::milliseconds(100), [this] {
+      check_arm();
       health();
     });
     RCLCPP_INFO(
-        get_logger(), "READ_ONLY MAVROS telemetry; arming/mode/motion transmission unavailable");
+        get_logger(), "%s; mode/motion transmission unavailable",
+        arming_enabled_ ? "ARMING_ONLY: explicit arm/disarm enabled" : "READ_ONLY MAVROS telemetry");
   }
 
  private:
@@ -150,6 +157,87 @@ class MavrosMonitor : public rclcpp::Node {
     int64_t stamp{0};
     Steady::time_point received{};
   };
+
+  struct PendingArm {
+    std::shared_ptr<rmw_request_id_t> header;
+    bool target;
+    Steady::time_point started;
+    int64_t request_id{0};
+    bool accepted{false};
+  };
+
+  void arm_response(const std::shared_ptr<rmw_request_id_t> &header,
+      bool success, const std::string &message) {
+    std_srvs::srv::SetBool::Response response;
+    response.success = success;
+    response.message = message;
+    arm_->send_response(*header, response);
+  }
+
+  void finish_arm(bool success, const std::string &message) {
+    auto header = pending_arm_->header;
+    arming_client_->remove_pending_request(pending_arm_->request_id);
+    pending_arm_.reset();
+    arm_response(header, success, message);
+  }
+
+  void request_arm(const std::shared_ptr<rmw_request_id_t> &header, bool target) {
+    if (!arming_enabled_) {
+      arm_response(header, false, "READ_ONLY: launch arming.launch.py to enable explicit arm/disarm");
+      return;
+    }
+    if (pending_arm_) {
+      arm_response(header, false, "Another arm/disarm request is pending");
+      return;
+    }
+    if (!connected()) {
+      arm_response(header, false, "DISCONNECTED: fresh FCU state is required");
+      return;
+    }
+    if (state_.armed == target) {
+      arm_response(header, true, target ? "Already armed" : "Already disarmed");
+      return;
+    }
+    // A stale IMU must not prevent an explicit disarm request.
+    if (target && !fresh(imu_sample_, sensor_timeout_)) {
+      arm_response(header, false, "TELEMETRY_STALE: fresh IMU is required to arm");
+      return;
+    }
+    if (!arming_client_->service_is_ready()) {
+      arm_response(header, false, "MAVROS arming service is unavailable");
+      return;
+    }
+    pending_arm_ = PendingArm{header, target, Steady::now()};
+    auto request = std::make_shared<mavros_msgs::srv::CommandBool::Request>();
+    request->value = target;
+    auto future = arming_client_->async_send_request(request,
+        [this, header](rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedFuture reply) {
+          // Ignore replies arriving after a timeout or disconnect. Never retry automatically.
+          if (!pending_arm_ || pending_arm_->header != header)
+            return;
+          const auto result = reply.get();
+          if (!result->success || result->result != 0) {
+            finish_arm(false, "FCU rejected arm/disarm; MAV_RESULT=" + std::to_string(result->result));
+            return;
+          }
+          pending_arm_->accepted = true;
+        });
+    pending_arm_->request_id = future.request_id;
+  }
+
+  void check_arm() {
+    if (!pending_arm_)
+      return;
+    if (!connected()) {
+      finish_arm(false, "DISCONNECTED: arm/disarm outcome is unconfirmed; inspect FCU state");
+    } else if (std::chrono::duration<double>(Steady::now() - pending_arm_->started).count() >=
+        arm_timeout_) {
+      finish_arm(false, "Timeout: arm/disarm outcome is unconfirmed; inspect FCU state");
+    } else if (pending_arm_->accepted && state_.armed == pending_arm_->target &&
+        state_sample_.received > pending_arm_->started) {
+      finish_arm(true, state_.armed ? "Armed: confirmed by FCU state" : "Disarmed: confirmed by FCU state");
+    }
+  }
 
   double positive(
       const char *name, double value, const rcl_interfaces::msg::ParameterDescriptor &fixed) {
@@ -196,7 +284,7 @@ class MavrosMonitor : public rclcpp::Node {
     status.message =
         !connected() ? "DISCONNECTED" :
         !imu_ok || (depth_enabled_ && !pressure_ok) ? "TELEMETRY_STALE" :
-        "READ_ONLY";
+        arming_enabled_ ? "ARMING_ONLY" : "READ_ONLY";
     auto field = [&status](const std::string &key, const std::string &value) {
       diagnostic_msgs::msg::KeyValue kv;
       kv.key = key;
@@ -204,6 +292,8 @@ class MavrosMonitor : public rclcpp::Node {
       status.values.push_back(kv);
     };
     field("control_enabled", "false");
+    field("arming_enabled", arming_enabled_ ? "true" : "false");
+    field("arming_service_ready", arming_client_ && arming_client_->service_is_ready() ? "true" : "false");
     field("configured_mode", mode_);
     field("observed_mode", connected() ? state_.mode : "unknown");
     field("observed_armed", connected() ? (state_.armed ? "true" : "false") : "unknown");
@@ -220,8 +310,10 @@ class MavrosMonitor : public rclcpp::Node {
   }
 
   std::string firmware_, version_, mode_, frame_, last_status_;
-  double state_timeout_, sensor_timeout_, surface_pressure_, density_, gravity_;
-  bool depth_enabled_;
+  double state_timeout_, sensor_timeout_, surface_pressure_, density_, gravity_, arm_timeout_;
+  bool depth_enabled_, arming_enabled_;
+  std::optional<PendingArm> pending_arm_;
+  rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
   Sample state_sample_, imu_sample_, pressure_sample_;
   mavros_msgs::msg::State state_;
 

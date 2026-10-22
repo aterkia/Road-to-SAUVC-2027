@@ -1,4 +1,4 @@
-"""MAVROS + helm telemetry only; no mission, guidance, or mock vehicle."""
+"""MAVROS + helm telemetry, with opt-in arm/disarm; no mission or motion."""
 
 from pathlib import Path
 
@@ -11,6 +11,10 @@ from launch_ros.actions import Node
 
 
 def launch_nodes(context):
+    arming = LaunchConfiguration('arming_enabled').perform(context)
+    if arming not in ('true', 'false'):
+        raise ValueError('arming_enabled must be true or false')
+    arming_enabled = arming == 'true'
     config = LaunchConfiguration('config').perform(context)
     with open(config, encoding='utf-8') as stream:
         settings = yaml.safe_load(stream)
@@ -23,7 +27,10 @@ def launch_nodes(context):
             'bench requires an explicit fcu_url (serial or UDP); no hardware endpoint is assumed'
         )
 
-    # Freeze the bench scope even if a broader MAVROS config is supplied.
+    # RC, servo and motion/setpoint plugins remain excluded in both profiles.
+    plugins = ['sys_status', 'sys_time', 'imu']
+    if arming_enabled:
+        plugins.append('command')
     return [
         Node(
             package='mavros',
@@ -35,7 +42,7 @@ def launch_nodes(context):
                 {
                     'fcu_url': endpoint,
                     'gcs_url': '',
-                    'plugin_allowlist': ['sys_status', 'sys_time', 'imu'],
+                    'plugin_allowlist': plugins,
                     'plugin_denylist': ['*'],
                 },
             ],
@@ -44,7 +51,7 @@ def launch_nodes(context):
             package='helm',
             executable='helm_mavros_monitor',
             name='helm',
-            parameters=[config],
+            parameters=[config, {'arming_enabled': arming_enabled}],
             output='screen',
             on_exit=Shutdown(reason='helm monitor exited'),
         ),
@@ -57,6 +64,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument('config', default_value=str(config)),
             DeclareLaunchArgument('fcu_url', default_value=''),
+            DeclareLaunchArgument('arming_enabled', default_value='false'),
             OpaqueFunction(function=launch_nodes),
         ]
     )

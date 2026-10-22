@@ -6,11 +6,14 @@
 #include <csignal>
 #include <chrono>
 #include <iostream>
+#include <string>
 #include <mavlink/v2.0/common/mavlink.h>
 
 volatile std::sig_atomic_t running = 1;
 
-int main() {
+int main(int argc, char **argv) {
+  const bool arming_enabled = argc == 2 && std::string(argv[1]) == "--arming";
+  bool armed = false;
   std::signal(SIGINT, [](int) {
     running = 0;
   });
@@ -29,6 +32,11 @@ int main() {
   bool have_remote = false;
   mavlink_message_t incoming{};
   mavlink_status_t parser{};
+  auto send = [&](const mavlink_message_t &msg) {
+    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+    auto size = mavlink_msg_to_send_buffer(buffer, &msg);
+    sendto(fd, buffer, size, 0, reinterpret_cast<sockaddr *>(&remote), sizeof(remote));
+  };
   while (running) {
     pollfd input{fd, POLLIN, 0};
     poll(&input, 1, 50);
@@ -45,24 +53,37 @@ int main() {
             mavlink_command_long_t command{};
             mavlink_msg_command_long_decode(&incoming, &command);
             std::cout << " COMMAND " << command.command;
+            if (command.command == MAV_CMD_COMPONENT_ARM_DISARM)
+              std::cout << " VALUE " << command.param1 << " FORCE " << command.param2;
+            if (arming_enabled) {
+              uint8_t result = MAV_RESULT_UNSUPPORTED;
+              if (command.command == MAV_CMD_COMPONENT_ARM_DISARM &&
+                  (command.param1 == 0 || command.param1 == 1) && command.param2 == 0) {
+                armed = command.param1 == 1;
+                result = MAV_RESULT_ACCEPTED;
+              } else if (command.command == MAV_CMD_REQUEST_MESSAGE ||
+                  command.command == MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES) {
+                result = MAV_RESULT_ACCEPTED;
+              }
+              mavlink_message_t ack{};
+              mavlink_msg_command_ack_pack(1, 1, &ack, command.command, result, 0, 0,
+                  incoming.sysid, incoming.compid);
+              send(ack);
+            }
           }
           std::cout << std::endl;
         }
     }
     if (!have_remote)
       continue;
-    auto send = [&](const mavlink_message_t &msg) {
-      uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-      auto size = mavlink_msg_to_send_buffer(buffer, &msg);
-      sendto(fd, buffer, size, 0, reinterpret_cast<sockaddr *>(&remote), sizeof(remote));
-    };
     const auto ms = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                               std::chrono::steady_clock::now() - started)
                                               .count() +
         1000);
     mavlink_message_t msg{};
     mavlink_msg_heartbeat_pack(1, 1, &msg, MAV_TYPE_SUBMARINE, MAV_AUTOPILOT_ARDUPILOTMEGA,
-        MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, 0, MAV_STATE_STANDBY);
+        MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | (armed ? MAV_MODE_FLAG_SAFETY_ARMED : 0),
+        0, armed ? MAV_STATE_ACTIVE : MAV_STATE_STANDBY);
     send(msg);
     // NED north yaw=0 should emerge from MAVROS as ENU yaw=+pi/2.
     mavlink_msg_attitude_pack(1, 1, &msg, ms, 0, 0, 0, 0, 0, 0);
